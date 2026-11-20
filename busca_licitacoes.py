@@ -519,6 +519,14 @@ aside summary::-webkit-details-marker{display:none}
 .ordem{display:grid;gap:4px;margin-top:4px}
 .ordem button{text-align:left;border:0;background:transparent;color:var(--ink);font:500 14px var(--font);padding:7px 10px;border-radius:8px;cursor:pointer}
 .ordem button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.data-box{display:grid;gap:8px;margin-top:6px}
+.data-box input[type=date]{width:100%;min-width:0;background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--ink);font:600 14px var(--font);padding:8px 10px;color-scheme:dark}
+.data-box .modo{display:flex;gap:6px}
+.data-box .modo button,.atalhos button{flex:1;font:600 12.5px var(--font);padding:6px 8px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer}
+.data-box .modo button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:#241a00}
+.atalhos{display:flex;gap:6px;flex-wrap:wrap}
+.atalhos button{flex:0 0 auto}
+.atalhos button:hover,.data-box .modo button:hover{border-color:var(--accent);color:var(--ink)}
 .vals{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
 .vals input{width:100%;min-width:0;background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--ink);font:500 13.5px var(--font);padding:8px}
 
@@ -655,6 +663,18 @@ footer{font-size:12px;color:var(--dim)}
       <details open><summary>Portal</summary>
         <div id="f-portal"></div>
       </details>
+      <details open><summary>Data da disputa</summary>
+        <div class="data-box">
+          <input type="date" id="dia" aria-label="Data da disputa (prazo da proposta)">
+          <div class="modo" id="modo-dia">
+            <button type="button" data-m="no" aria-pressed="true">No dia</button>
+            <button type="button" data-m="apartir" aria-pressed="false">A partir do dia</button>
+          </div>
+          <div class="atalhos" id="atalhos-dia">
+            <button type="button" data-d="0">Hoje</button><button type="button" data-d="1">Amanhã</button><button type="button" data-d="3">+3 dias</button><button type="button" data-d="7">+7 dias</button><button type="button" data-d="">Limpar</button>
+          </div>
+        </div>
+      </details>
       <details open><summary>Ordenar por</summary>
         <div class="ordem" id="f-ordem">
           <button type="button" data-o="encerra" aria-pressed="true">Encerra primeiro</button>
@@ -690,7 +710,7 @@ const UFS = [["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["
 const MODS = [[6,"Pregão Eletrônico"],[8,"Dispensa"],[4,"Concorrência Eletrônica"],[7,"Pregão Presencial"],[5,"Concorrência Presencial"],[12,"Credenciamento"],[9,"Inexigibilidade"],[1,"Leilão Eletrônico"]];
 const PRAZOS = [["", "Qualquer prazo"], ["2", "Encerra em até 2 dias"], ["7", "Encerra em até 7 dias"], ["30", "Encerra em até 30 dias"]];
 
-let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "";
+let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "", DIA = "", MODO_DIA = "no";
 let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12] };
 try { Object.assign(PREF, JSON.parse(localStorage.getItem("busca_pref") || "{}")); } catch (e) {}
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
@@ -728,7 +748,8 @@ function filtrar() {
     (!PREF.portais.length || PREF.portais.includes(x.portal)) &&
     (!q.length || q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p))) &&
     (vmin == null || (x.valor || 0) >= vmin) && (vmax == null || (x.valor != null && x.valor <= vmax)) &&
-    (lim == null || (diasAte(x.encerramento) != null && diasAte(x.encerramento) <= lim))
+    (lim == null || (diasAte(x.encerramento) != null && diasAte(x.encerramento) <= lim)) &&
+    (!DIA || (x.encerramento && (MODO_DIA === "no" ? x.encerramento.slice(0, 10) === DIA : x.encerramento.slice(0, 10) >= DIA)))
   ).sort((a, b) => {
     if (ORDEM === "recentes") return (b.publicacao || "").localeCompare(a.publicacao || "");
     if (ORDEM === "maior") return (b.valor || 0) - (a.valor || 0);
@@ -861,7 +882,7 @@ function desenhar() {
   desenharPortais(); desenharMods();
   if (!DADOS) return;
   const lista = filtrar(), nome = (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
-  let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
+  let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
   if (DADOS.erros.length) h += `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
@@ -892,6 +913,17 @@ $("#f").addEventListener("submit", (e) => { e.preventDefault(); if (!DADOS || DA
 $("#uf").addEventListener("change", buscar);
 $("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
+function hojeMais(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+$("#dia").min = hojeMais(0);
+$("#dia").addEventListener("change", () => { DIA = $("#dia").value; MOSTRAR = 40; desenhar(); });
+$("#modo-dia").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  MODO_DIA = b.dataset.m; document.querySelectorAll("#modo-dia button").forEach((x) => x.setAttribute("aria-pressed", x === b)); desenhar();
+});
+$("#atalhos-dia").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  DIA = b.dataset.d === "" ? "" : hojeMais(+b.dataset.d); $("#dia").value = DIA; MOSTRAR = 40; desenhar();
+});
 $("#f-prazo").addEventListener("change", (e) => { PRAZO = e.target.value; desenhar(); });
 $("#f-ordem").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
