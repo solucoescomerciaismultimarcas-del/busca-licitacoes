@@ -406,6 +406,33 @@ def licitacao(id_pncp):
     return res
 
 
+CONSULTA_API = os.environ.get("CONSULTA_PAGADOR", "https://consulta-orgaos.onrender.com") + "/api/consulta?cnpj="
+_vaga_score = threading.Semaphore(2)  # no máximo 2 consultas ao mesmo tempo no Consulta Pagador
+
+
+def nota_orgao(cnpj):
+    """Pergunta ao Consulta Pagador a nota do órgão e guarda por 24 horas."""
+    cnpj = re.sub(r"\D", "", cnpj or "")
+    if len(cnpj) != 14:
+        raise ValueError("CNPJ inválido.")
+    chave = f"nota|{cnpj}"
+    with _lock:
+        if chave in _cache and time.time() - _cache[chave][0] < 86400:
+            return _cache[chave][1]
+    with _vaga_score:
+        with _lock:  # outra pessoa pode ter buscado enquanto esperava a vaga
+            if chave in _cache and time.time() - _cache[chave][0] < 86400:
+                return _cache[chave][1]
+        d = http_get(CONSULTA_API + cnpj, timeout=150) or {}
+    a = d.get("avaliacao") or {}
+    res = {"nivel": a.get("nivel") or ("privado" if d.get("esfera") == "privado" else "sem_dados"),
+           "titulo": a.get("titulo") or "", "score": a.get("score"),
+           "prazo": (a.get("prazo") or {}).get("dias")}
+    with _lock:
+        _cache[chave] = (time.time(), res)
+    return res
+
+
 def buscar(uf, modalidades):
     uf = re.sub(r"[^A-Z]", "", uf.upper())[:2]
     if len(uf) != 2:
@@ -532,6 +559,15 @@ aside summary::-webkit-details-marker{display:none}
 .acoes a,.acoes button{font:600 13px var(--font);padding:6px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--ink);background:transparent;text-decoration:none;cursor:pointer}
 .acoes a.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .acoes a.pag{color:var(--gold);border-color:#7a5a12}
+.nota{display:inline-flex;align-items:center;gap:7px;font:700 13px var(--font);padding:6px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--muted);text-decoration:none;white-space:nowrap}
+.nota b{font:800 13px var(--mono)}
+.nota .pt{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+.nota.bom{color:var(--good);border-color:#1f6b4c;background:var(--good-bg)}.nota.bom .pt{background:var(--good)}
+.nota.regular{color:var(--warn);border-color:#6e5317;background:var(--warn-bg)}.nota.regular .pt{background:var(--warn)}
+.nota.ruim{color:var(--bad);border-color:#7a2f2f;background:var(--bad-bg)}.nota.ruim .pt{background:var(--bad)}
+.nota.esp .pt{animation:pisca 1s ease-in-out infinite}
+@keyframes pisca{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.nota.esp .pt{animation:none}}
 .acoes a:hover,.acoes button:hover{border-color:var(--accent)}
 .det{grid-column:1 / -1;border-top:1px dashed var(--line2);padding-top:12px;display:grid;gap:12px;min-width:0}
 .det h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
@@ -740,7 +776,7 @@ function cartao(x) {
     <div class="acoes">
       ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
-      ${x.cnpj ? `<a class="pag" href="${CONSULTA}${esc(x.cnpj)}" target="_blank" rel="noopener">É bom pagador?</a>` : ""}
+      ${x.cnpj ? htmlNota(x.cnpj) : ""}
     </div>
     ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id], x)}</div>` : ""}
   </article>`;
@@ -751,6 +787,11 @@ function seloPortal(p) {
   if (p === "Compras.gov.br") return `<span class="selo-cg" title="Licitação do Compras.gov.br"><i><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.5 11h11L21 7H6.5"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg></i><span>Compras<em>.gov.br</em></span></span>`;
   return `<span class="tag portal${MEUS.includes(p) ? " meu" : ""}">${esc(p)}</span>`;
 }
+// ===== botão Score: abre o Consulta Pagador com o CNPJ do órgão =====
+function htmlNota(cnpj) {
+  return `<a class="pag" href="${CONSULTA}${cnpj}" target="_blank" rel="noopener" title="Ver a nota do órgão no Consulta Pagador">📊 Score</a>`;
+}
+function pedirNotas() {}
 const ICDOC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6v18h12V7l-4-4z"/><path d="M14 3v4h4M12 11v6M9 14l3 3 3-3"/></svg>';
 function qtd(v) { return v == null ? "" : Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 4}); }
 function dataSo(s) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; }
@@ -827,6 +868,7 @@ function desenhar() {
   h += lista.slice(0, MOSTRAR).map(cartao).join("");
   if (lista.length > MOSTRAR) h += `<button type="button" class="mais" id="mais">Mostrar mais (${(lista.length - MOSTRAR).toLocaleString("pt-BR")} restantes)</button>`;
   $("#res").innerHTML = h;
+  pedirNotas();
 }
 
 let pedido = 0;
@@ -935,15 +977,16 @@ async function paginaLicitacao(id) {
     <div class="acoes">
       ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP (oficial)</a>` : ""}
-      ${x.cnpj ? `<a class="pag" href="${CONSULTA}${esc(x.cnpj)}" target="_blank" rel="noopener">É bom pagador?</a>` : ""}
+      ${x.cnpj ? htmlNota(x.cnpj) : ""}
       <button type="button" data-cal="${esc(x.id)}">📅 Salvar no calendário</button>
       <button type="button" data-copiar="${esc(location.href)}">🔗 Copiar link</button>
     </div>
-    <section class="secao" id="sec-docs"><h3>Documentos do edital</h3><div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div></section>
+    ${""}<section class="secao" id="sec-docs"><h3>Documentos do edital</h3><div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div></section>
     <section class="secao" id="sec-itens" hidden></section>
     <section class="secao"><h3>Objeto completo</h3><p class="txt">${esc(x.objeto)}</p>
       ${x.complemento && x.complemento !== x.objeto ? `<h3>Informação complementar</h3><p class="txt">${esc(x.complemento)}</p>` : ""}</section>
     <section class="secao"><h3>Dados da contratação</h3>${blocoDados(x).replace(/^[\s\S]*?<div><h4>Dados da contratação<\/h4>/, "<div>")}</section>`;
+  pedirNotas();
   alvo.addEventListener("click", (e) => {
     const bc = e.target.closest("[data-copiar]"), bk = e.target.closest("[data-cal]");
     if (bk) salvarCalendario(x);
@@ -1016,6 +1059,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 txt = "ERRO: " + erro_txt(e)
             return self._send(200, txt, "text/plain; charset=utf-8")
+        if u.path == "/api/nota":
+            q = urllib.parse.parse_qs(u.query)
+            try:
+                res = nota_orgao(q.get("cnpj", [""])[0])
+                return self._send(200, json.dumps(res, ensure_ascii=False), "application/json; charset=utf-8")
+            except Exception as e:
+                return self._send(502, json.dumps({"erro": erro_txt(e)}, ensure_ascii=False), "application/json; charset=utf-8")
         if u.path == "/api/licitacao":
             q = urllib.parse.parse_qs(u.query)
             try:
