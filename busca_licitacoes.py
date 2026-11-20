@@ -384,6 +384,7 @@ def buscar_modalidade(uf, modalidade):
         r = resumir(c, portal_de(c))
         if r["encerramento"] and r["encerramento"] < agora:
             continue  # prazo de proposta já acabou
+        r.pop("complemento", None)  # a página da licitação busca o texto completo; a lista fica mais leve
         lista.append(r)
     res = {"itens": lista, "total": total, "cortado": cortado}
     with _lock:
@@ -601,11 +602,18 @@ def _html_email(novas, urgentes, ufs, portais, palavras):
 
 def montar_resumo():
     ufs = _lista_env("ALERTA_UF", "DF")
+    if "BR" in [u.upper() for u in ufs]:
+        ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
+               "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
     portais = _lista_env("ALERTA_PORTAIS", "Compras.gov.br")
     palavras = [sem_acento(p) for p in _lista_env("ALERTA_PALAVRAS")]
     itens = []
+    vistos = set()
     for uf in ufs:
-        itens += buscar(uf, list(MODALIDADES_PADRAO))["itens"]
+        for x in buscar(uf, list(MODALIDADES_PADRAO))["itens"]:
+            if x["id"] not in vistos:
+                vistos.add(x["id"])
+                itens.append(x)
     agora = time.time()
     ontem = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora - 86400))
     daqui2 = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora + 2 * 86400))
@@ -931,7 +939,7 @@ if (typeof PREF.tipo !== "string") PREF.tipo = "Produto";
 PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e manutenção");
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
 
-$("#uf").innerHTML = UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
+$("#uf").innerHTML = `<option value="BR">🇧🇷 Brasil — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
 $("#uf").value = PREF.uf;
 $("#f-prazo").innerHTML = PRAZOS.map(([v, t], i) => `<label class="opc"><input type="radio" name="prazo" value="${v}"${i === 0 ? " checked" : ""}><span>${t}</span></label>`).join("");
 
@@ -996,7 +1004,8 @@ function desenharCats() {
     .forEach((x) => (x.categorias || []).forEach((k) => { c[k] = (c[k] || 0) + 1; }));
   const nomes = Object.keys(c).sort((a, b) => (a === "Outros") - (b === "Outros") || c[b] - c[a]);
   PREF.cats.forEach((k) => { if (!nomes.includes(k)) nomes.push(k); });
-  $("#f-cat").innerHTML = (nomes.length ? nomes.map((k) => `<label class="opc"><input type="checkbox" data-cat="${esc(k)}"${PREF.cats.includes(k) ? " checked" : ""}><span>${k === "Eletrodomésticos" ? "🔧 " : ""}${esc(k)}</span><span class="n">${c[k] || 0}</span></label>`).join("") : `<p class="loc">As categorias aparecem depois da busca.</p>`) +
+  const todas = nomes.length && nomes.every((k) => PREF.cats.includes(k));
+  $("#f-cat").innerHTML = (nomes.length ? `<label class="opc" style="border-bottom:1px solid var(--line);padding-bottom:7px;margin-bottom:3px"><input type="checkbox" data-todascat="1"${todas ? " checked" : ""}><span><b>Todas</b></span></label>` : "") + (nomes.length ? nomes.map((k) => `<label class="opc"><input type="checkbox" data-cat="${esc(k)}"${PREF.cats.includes(k) ? " checked" : ""}><span>${k === "Eletrodomésticos" ? "🔧 " : ""}${esc(k)}</span><span class="n">${c[k] || 0}</span></label>`).join("") : `<p class="loc">As categorias aparecem depois da busca.</p>`) +
     (PREF.cats.length ? `<button type="button" class="mini-bt" data-limpacat="1">Mostrar todas as categorias</button>` : "");
 }
 function desenharMods() {
@@ -1116,8 +1125,9 @@ async function abrirDet(id) {
 function desenhar() {
   desenharPortais(); desenharCats(); desenharMods();
   if (!DADOS) return;
-  const lista = filtrar(), nome = (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
+  const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
   let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
+  if (DADOS.progresso) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Carregando os estados: ${DADOS.progresso.feitos} de ${DADOS.progresso.total}. As licitações vão aparecendo enquanto isso.</div>`;
   if (DADOS.erros.length) h += `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
@@ -1128,8 +1138,41 @@ function desenhar() {
 }
 
 let pedido = 0;
+async function buscarBrasil(meu) {
+  DADOS = {uf: "BR", itens: [], erros: [], cortadas: [], atualizado: "", progresso: {feitos: 0, total: UFS.length}};
+  const vistos = new Set(), fila = UFS.map((u) => u[0]);
+  let ultimoDesenho = 0;
+  async function trabalhador() {
+    while (fila.length) {
+      const uf = fila.shift();
+      try {
+        const r = await fetch(`/api/busca?uf=${uf}&mods=${PREF.mods.join(",")}`), d = await r.json();
+        if (meu !== pedido) return;
+        if (!r.ok) throw new Error(d.erro || "falhou");
+        d.itens.forEach((x) => { if (!vistos.has(x.id)) { vistos.add(x.id); DADOS.itens.push(x); } });
+        d.erros.forEach((e) => DADOS.erros.push(uf + " " + e));
+        d.cortadas.forEach((c) => { if (!DADOS.cortadas.includes(c)) DADOS.cortadas.push(c); });
+        DADOS.atualizado = d.atualizado;
+      } catch (e) {
+        if (meu !== pedido) return;
+        DADOS.erros.push(uf + ": não respondeu");
+      }
+      DADOS.progresso.feitos++;
+      if (Date.now() - ultimoDesenho > 1500 || !fila.length) { ultimoDesenho = Date.now(); desenhar(); }
+    }
+  }
+  await Promise.all([trabalhador(), trabalhador()]);  // 2 estados por vez, para o PNCP não cortar
+  if (meu !== pedido) return;
+  DADOS.progresso = null; desenhar();
+}
 async function buscar() {
   const uf = $("#uf").value, meu = ++pedido;
+  if (uf === "BR") {
+    PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
+    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas em todo o Brasil, estado por estado. A primeira vez leva alguns minutos; as licitações vão aparecendo enquanto isso.</div>`;
+    try { await buscarBrasil(meu); } finally { if (meu === pedido) $("#bt").disabled = false; }
+    return;
+  }
   PREF.uf = uf; salvar(); MOSTRAR = 40;
   $("#bt").disabled = true;
   $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. A primeira busca de cada estado leva de 20 a 40 segundos; depois fica guardada por 30 minutos.</div>`;
@@ -1180,6 +1223,10 @@ $("#f-tipo").addEventListener("click", (e) => {
   document.querySelectorAll("#f-tipo button").forEach((x) => x.setAttribute("aria-pressed", x === b)); desenhar();
 });
 $("#f-cat").addEventListener("change", (e) => {
+  if (e.target.dataset.todascat) {
+    PREF.cats = e.target.checked ? [...document.querySelectorAll("#f-cat [data-cat]")].map((x) => x.dataset.cat) : [];
+    salvar(); MOSTRAR = 40; desenhar(); return;
+  }
   const k = e.target.dataset.cat; if (k == null) return;
   PREF.cats = e.target.checked ? [...new Set(PREF.cats.concat(k))] : PREF.cats.filter((x) => x !== k);
   salvar(); MOSTRAR = 40; desenhar();
@@ -1323,7 +1370,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, code, body, ctype):
         data = body.encode("utf-8")
+        zip_ok = len(data) > 2000 and "gzip" in (self.headers.get("Accept-Encoding") or "")
+        if zip_ok:
+            import gzip
+            data = gzip.compress(data, 6)
         self.send_response(code)
+        if zip_ok:
+            self.send_header("Content-Encoding", "gzip")
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
