@@ -296,6 +296,70 @@ def buscar_modalidade(uf, modalidade):
     return res
 
 
+PNCP_API = "https://pncp.gov.br/api/pncp/v1"
+
+
+def _get_tentando(url, tentativas=3):
+    for t in range(1, tentativas + 1):
+        try:
+            return http_get(url, timeout=40)
+        except urllib.error.HTTPError as e:
+            if e.code in (204, 404):
+                return None
+            if e.code < 500 and e.code != 429:
+                raise
+        except Exception:
+            if t == tentativas:
+                raise
+        time.sleep(1.5 * t)
+    return None
+
+
+def detalhes(id_pncp):
+    """Documentos (edital, TR, anexos) e itens de uma licitação, direto do PNCP."""
+    m = re.match(r"^(\d{14})-\d+-(\d+)/(\d{4})$", id_pncp or "")
+    if not m:
+        raise ValueError("Licitação inválida.")
+    cnpj, seq, ano = m.group(1), int(m.group(2)), m.group(3)
+    chave = f"det|{id_pncp}"
+    with _lock:
+        if chave in _cache and time.time() - _cache[chave][0] < 3600:
+            return _cache[chave][1]
+    base = f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}"
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_arq = ex.submit(_get_tentando, f"{base}/arquivos")
+        f_itens = ex.submit(_get_tentando, f"{base}/itens?pagina=1&tamanhoPagina=500")
+        arquivos, itens, erros = [], [], []
+        try:
+            for a in (f_arq.result() or []):
+                if a.get("statusAtivo") is False:
+                    continue
+                url = a.get("url") or a.get("uri") or ""
+                if not url and a.get("sequencialDocumento") is not None:
+                    url = f"{base}/arquivos/{a['sequencialDocumento']}"
+                arquivos.append({"titulo": a.get("titulo") or a.get("nomeArquivo") or "Documento",
+                                 "tipo": a.get("tipoDocumentoNome") or a.get("tipoDocumentoDescricao") or "",
+                                 "data": str(a.get("dataPublicacaoPncp") or "")[:10], "url": url})
+        except Exception as e:
+            erros.append("documentos: " + erro_txt(e))
+        try:
+            r = f_itens.result() or []
+            r = r.get("data", []) if isinstance(r, dict) else r
+            for i in r:
+                itens.append({"n": i.get("numeroItem"), "descricao": re.sub(r"\s+", " ", str(i.get("descricao") or "")).strip(),
+                              "qtd": i.get("quantidade"), "un": i.get("unidadeMedida") or "",
+                              "vu": i.get("valorUnitarioEstimado"), "vt": i.get("valorTotal"),
+                              "tipo": i.get("materialOuServicoNome") or "",
+                              "me": i.get("tipoBeneficioNome") or "", "situacao": i.get("situacaoCompraItemNome") or ""})
+        except Exception as e:
+            erros.append("itens: " + erro_txt(e))
+    res = {"arquivos": arquivos, "itens": sorted(itens, key=lambda x: x["n"] or 0), "erros": erros}
+    if not erros:
+        with _lock:
+            _cache[chave] = (time.time(), res)
+    return res
+
+
 def buscar(uf, modalidades):
     uf = re.sub(r"[^A-Z]", "", uf.upper())[:2]
     if len(uf) != 2:
@@ -419,6 +483,22 @@ aside summary::-webkit-details-marker{display:none}
 .acoes a.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .acoes a.pag{color:var(--gold);border-color:#7a5a12}
 .acoes a:hover,.acoes button:hover{border-color:var(--accent)}
+.det{grid-column:1 / -1;border-top:1px dashed var(--line2);padding-top:12px;display:grid;gap:12px;min-width:0}
+.det h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.docs{display:grid;gap:6px}
+.doc{display:flex;gap:10px;align-items:center;background:var(--surf2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;text-decoration:none;color:var(--ink);min-width:0}
+.doc:hover{border-color:var(--accent)}
+.doc svg{flex:none;color:var(--gold)}
+.doc span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc small{margin-left:auto;color:var(--dim);font-size:12px;white-space:nowrap}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+.tw table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+.tw th,.tw td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}
+.tw th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);background:var(--surf2);white-space:nowrap}
+.tw td.d{text-align:left;min-width:260px;color:var(--ink)}
+.tw td.d small{display:block;color:var(--dim)}
+.tw tr:last-child td{border-bottom:0}
+.tw tfoot td{font-weight:700;background:var(--surf2)}
 .mais{justify-self:center;font:700 14px var(--font);padding:10px 22px;border-radius:999px;border:1px solid var(--line2);background:var(--surf);color:var(--ink);cursor:pointer}
 .vazio{background:var(--surf);border:1px dashed var(--line2);border-radius:14px;padding:30px;text-align:center;color:var(--muted)}
 .vazio b{display:block;color:var(--ink);font-size:17px;margin-bottom:6px}
@@ -584,8 +664,42 @@ function cartao(x) {
       ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
       ${x.cnpj ? `<a class="pag" href="${CONSULTA}${esc(x.cnpj)}" target="_blank" rel="noopener">É bom pagador?</a>` : ""}
+      ${x.id ? `<button type="button" data-det="${esc(x.id)}" aria-expanded="${ABERTOS[x.id] ? "true" : "false"}">${ABERTOS[x.id] ? "Fechar documentos e itens" : "📄 Documentos e itens"}</button>` : ""}
     </div>
+    ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id])}</div>` : ""}
   </article>`;
+}
+
+const ABERTOS = {}, DET = {};
+const ICDOC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6v18h12V7l-4-4z"/><path d="M14 3v4h4M12 11v6M9 14l3 3 3-3"/></svg>';
+function qtd(v) { return v == null ? "" : Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 4}); }
+function painelDet(d) {
+  if (!d) return `<div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div>`;
+  if (d.erro) return `<div class="aviso">${esc(d.erro)}</div>`;
+  let h = "";
+  if (d.erros && d.erros.length) h += `<div class="aviso">O PNCP não respondeu para ${esc(d.erros.join("; "))}. Tente de novo em alguns minutos.</div>`;
+  h += `<div><h4>Documentos (${d.arquivos.length})</h4>` + (d.arquivos.length
+    ? `<div class="docs">${d.arquivos.map((a) => `<a class="doc" href="${esc(a.url)}" target="_blank" rel="noopener">${ICDOC}<span>${esc(a.titulo)}${a.tipo && a.tipo !== a.titulo ? " · " + esc(a.tipo) : ""}</span><small>${esc(a.data.split("-").reverse().join("/"))}</small></a>`).join("")}</div>`
+    : `<p class="loc">Nenhum documento publicado no PNCP. Veja no portal da licitação.</p>`) + `</div>`;
+  if (d.itens.length) {
+    const tot = d.itens.reduce((s, i) => s + (i.vt || 0), 0);
+    h += `<div><h4>Itens (${d.itens.length})</h4><div class="tw"><table><thead><tr><th>Item</th><th style="text-align:left">Descrição</th><th>Qtd</th><th>Un.</th><th>Valor unit.</th><th>Total</th></tr></thead><tbody>` +
+      d.itens.map((i) => `<tr><td>${esc(i.n)}</td><td class="d">${esc(i.descricao)}${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${qtd(i.qtd)}</td><td>${esc(i.un)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
+      `</tbody>${tot ? `<tfoot><tr><td colspan="5">Total estimado</td><td>${brl(tot)}</td></tr></tfoot>` : ""}</table></div></div>`;
+  }
+  return h;
+}
+async function abrirDet(id) {
+  ABERTOS[id] = !ABERTOS[id];
+  desenhar();
+  if (!ABERTOS[id] || DET[id]) return;
+  try {
+    const r = await fetch(`/api/detalhes?id=${encodeURIComponent(id)}`);
+    const d = await r.json();
+    DET[id] = r.ok ? d : {erro: d.erro || "Falha ao buscar no PNCP."};
+  } catch (e) { DET[id] = {erro: "Falha ao buscar no PNCP. Tente de novo."}; }
+  if (DET[id].erro || (DET[id].erros && DET[id].erros.length)) { const x = DET[id]; delete DET[id]; DET[id] = x; setTimeout(() => { if (DET[id] === x) delete DET[id]; }, 1000); }
+  desenhar();
 }
 
 function desenhar() {
@@ -644,6 +758,8 @@ $("#f-mod").addEventListener("change", (e) => {
 });
 $("#res").addEventListener("click", (e) => {
   if (e.target.id === "mais") { MOSTRAR += 40; desenhar(); return; }
+  const bd = e.target.closest("[data-det]");
+  if (bd) { abrirDet(bd.dataset.det); return; }
   if (e.target.classList.contains("obj")) e.target.classList.toggle("aberto");
 });
 
@@ -684,6 +800,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 txt = "ERRO: " + erro_txt(e)
             return self._send(200, txt, "text/plain; charset=utf-8")
+        if u.path == "/api/detalhes":
+            q = urllib.parse.parse_qs(u.query)
+            try:
+                res = detalhes(q.get("id", [""])[0])
+                return self._send(200, json.dumps(res, ensure_ascii=False), "application/json; charset=utf-8")
+            except ValueError as e:
+                return self._send(400, json.dumps({"erro": str(e)}, ensure_ascii=False), "application/json; charset=utf-8")
+            except Exception as e:
+                return self._send(502, json.dumps({"erro": erro_txt(e)}, ensure_ascii=False), "application/json; charset=utf-8")
         if u.path == "/api/busca":
             q = urllib.parse.parse_qs(u.query)
             try:
