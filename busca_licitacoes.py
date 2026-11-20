@@ -1076,7 +1076,7 @@ async function paginaP(uf, mod, pg) {
     let r;
     await vaga();
     try { r = await fetch(url, {headers: {Accept: "application/json"}}); }
-    catch (e) { soltaVaga(); if (t === 5) throw new Error("sem conexão com o PNCP"); await dormir(2000 * t); continue; }
+    catch (e) { soltaVaga(); if (t >= 2) throw new Error("sem conexão com o PNCP"); await dormir(1500); continue; }
     try {
       if (r.status === 204) return {};
       if (r.ok) { const txt = await r.text(); return txt.trim() ? JSON.parse(txt) : {}; }
@@ -1134,14 +1134,16 @@ const MODS = [[6,"Pregão Eletrônico"],[8,"Dispensa"],[4,"Concorrência Eletrô
 const PRAZOS = [["", "Qualquer prazo"], ["2", "Encerra em até 2 dias"], ["7", "Encerra em até 7 dias"], ["30", "Encerra em até 30 dias"]];
 
 let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "", DIA = "", MODO_DIA = "no";
-let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto" };
+let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto", ufs: ["DF", "SP", "GO"] };
 try { Object.assign(PREF, JSON.parse(localStorage.getItem("busca_pref") || "{}")); } catch (e) {}
 if (!Array.isArray(PREF.cats)) PREF.cats = [];
+if (!Array.isArray(PREF.ufs) || !PREF.ufs.length) PREF.ufs = ["DF", "SP", "GO"];
 if (typeof PREF.tipo !== "string") PREF.tipo = "Produto";
 PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e manutenção");
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
 
-$("#uf").innerHTML = `<option value="BR">BRASIL — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
+function nomeMeus() { return `MEUS ESTADOS (${PREF.ufs.join(", ")})`; }
+$("#uf").innerHTML = `<option value="MEUS">${nomeMeus()}</option><option value="BR">BRASIL — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
 $("#uf").value = PREF.uf;
 $("#f-prazo").innerHTML = PRAZOS.map(([v, t], i) => `<label class="opc"><input type="radio" name="prazo" value="${v}"${i === 0 ? " checked" : ""}><span>${t}</span></label>`).join("");
 
@@ -1178,7 +1180,7 @@ function filtrar() {
   return DADOS.itens.filter((x) =>
     (!PREF.portais.length || PREF.portais.includes(x.portal)) &&
     (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo) &&
-    (DADOS.uf !== "BR" || !UFSEL.length || UFSEL.includes(x.uf)) &&
+    (DADOS.uf === "MEUS" ? PREF.ufs.includes(x.uf) : DADOS.uf !== "BR" || !UFSEL.length || UFSEL.includes(x.uf)) &&
     (!PREF.cats.length || (x.categorias || []).some((c) => PREF.cats.includes(c))) &&
     (!q.length || q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p))) &&
     (vmin == null || (x.valor || 0) >= vmin) && (vmax == null || (x.valor != null && x.valor <= vmax)) &&
@@ -1214,16 +1216,19 @@ function desenharCats() {
 let UFSEL = [];
 function desenharUfs() {
   const box = $("#box-uf");
-  if (!DADOS || DADOS.uf !== "BR") { box.hidden = true; return; }
+  if (!(DADOS && (DADOS.uf === "BR" || DADOS.uf === "MEUS"))) { box.hidden = true; return; }
+  const meus = DADOS.uf === "MEUS";
   box.hidden = false;
   const c = {};
   DADOS.itens.filter((x) => (!PREF.portais.length || PREF.portais.includes(x.portal)) && (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo))
     .forEach((x) => { c[x.uf] = (c[x.uf] || 0) + 1; });
   const st = DADOS.status || {};
-  $("#f-ufs").innerHTML = `<div class="loc" style="margin-bottom:4px">Sem marcar nenhum, mostra todos.</div>` + UFS.map(([u, n]) => {
-    const s = st[u], marca = s === "ok" ? (c[u] || 0) : s === "erro" ? "⚠ falhou" : "…";
-    return `<label class="opc"><input type="checkbox" data-uf="${u}"${UFSEL.includes(u) ? " checked" : ""}><span>${u} — ${esc(n)}</span><span class="n">${marca}</span></label>`;
-  }).join("") + (UFSEL.length ? `<button type="button" class="mini-bt" data-limpauf="1">Mostrar todos os estados</button>` : "");
+  const marcados = meus ? PREF.ufs : UFSEL;
+  const lista = meus ? UFS.slice().sort((a, b) => PREF.ufs.includes(b[0]) - PREF.ufs.includes(a[0])) : UFS;
+  $("#f-ufs").innerHTML = `<div class="loc" style="margin-bottom:4px">${meus ? "Marque os estados que você quer. Fica guardado para a próxima vez." : "Sem marcar nenhum, mostra todos."}</div>` + lista.map(([u, n]) => {
+    const s = st[u], marca = meus && !PREF.ufs.includes(u) ? "" : s === "ok" ? (c[u] || 0) : s === "erro" ? "⚠ falhou" : "…";
+    return `<label class="opc"><input type="checkbox" data-uf="${u}"${marcados.includes(u) ? " checked" : ""}><span>${u} — ${esc(n)}</span><span class="n">${marca}</span></label>`;
+  }).join("") + (!meus && UFSEL.length ? `<button type="button" class="mini-bt" data-limpauf="1">Mostrar todos os estados</button>` : "");
 }
 function desenharMods() {
   const c = DADOS ? contar(DADOS.itens, "modalidade") : {};
@@ -1342,10 +1347,10 @@ async function abrirDet(id) {
 function desenhar() {
   desenharPortais(); desenharCats(); desenharMods(); desenharUfs();
   if (!DADOS) return;
-  const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
+  const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : DADOS.uf === "MEUS" ? PREF.ufs.join(", ") : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
   let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
   if (DADOS.progresso) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Carregando os estados: ${DADOS.progresso.feitos} de ${DADOS.progresso.total}. As licitações vão aparecendo enquanto isso.</div>`;
-  if (DADOS.erros.length) h += DADOS.uf === "BR"
+  if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
@@ -1357,10 +1362,13 @@ function desenhar() {
 }
 
 let pedido = 0;
-async function buscarBrasil(meu) {
-  DADOS = {uf: "BR", itens: [], erros: [], cortadas: [], atualizado: "", status: {}, progresso: {feitos: 0, total: UFS.length}};
-  UFSEL = [];
-  const vistos = new Set();
+async function buscarVarios(meu, lista, novo, modo) {
+  if (novo) { DADOS = {uf: modo, itens: [], erros: [], cortadas: [], atualizado: "", status: {}, progresso: null, vistos: new Set()}; UFSEL = []; }
+  if (!DADOS.progresso) DADOS.progresso = {feitos: 0, total: 0};
+  DADOS.progresso.total += lista.length;
+  lista.forEach((u) => { delete DADOS.status[u]; DADOS.erros = DADOS.erros.filter((x) => x !== u); });
+  const vistos = DADOS.vistos, meuDados = DADOS;
+  desenhar();
   let ultimoDesenho = 0;
   async function umEstado(uf) {
     try {
@@ -1379,7 +1387,7 @@ async function buscarBrasil(meu) {
       while (fila.length) {
         const uf = fila.shift();
         const ok = await umEstado(uf);
-        if (meu !== pedido) return;
+        if (meu !== pedido || DADOS !== meuDados) return;
         if (ok) { DADOS.status[uf] = "ok"; DADOS.progresso.feitos++; }
         else if (ultima) { DADOS.status[uf] = "erro"; DADOS.progresso.feitos++; DADOS.erros.push(uf); }
         else falhas.push(uf);
@@ -1389,20 +1397,20 @@ async function buscarBrasil(meu) {
     await Promise.all(Array.from({length: nos}, trabalhador));
     return falhas;
   }
-  let falhas = await rodada(UFS.map((u) => u[0]), 3, false);  // 3 estados por vez (no máximo 4 pedidos ao PNCP ao mesmo tempo)
-  for (let t = 0; t < 2 && falhas.length && meu === pedido; t++) {
+  let falhas = await rodada(lista.slice(), 3, false);  // 3 estados por vez (no máximo 4 pedidos ao PNCP ao mesmo tempo)
+  for (let t = 0; t < 2 && falhas.length && meu === pedido && DADOS === meuDados; t++) {
     await new Promise((ok) => setTimeout(ok, 4000));  // respira e tenta de novo, um por vez
     falhas = await rodada(falhas, 1, t === 1);
   }
-  if (meu !== pedido) return;
-  DADOS.progresso = null; desenhar();
+  if (meu !== pedido || DADOS !== meuDados) return;
+  if (DADOS.progresso && DADOS.progresso.feitos >= DADOS.progresso.total) DADOS.progresso = null;
+  desenhar();
 }
 async function buscar() {
   const uf = $("#uf").value, meu = ++pedido;
-  if (uf === "BR") {
+  if (uf === "BR" || uf === "MEUS") {
     PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
-    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas em todo o Brasil, estado por estado. Leva alguns minutos; as licitações vão aparecendo enquanto isso.</div>`;
-    try { await buscarBrasil(meu); } finally { if (meu === pedido) $("#bt").disabled = false; }
+    try { await buscarVarios(meu, uf === "BR" ? UFS.map((u) => u[0]) : PREF.ufs.slice(), true, uf); } finally { if (meu === pedido) $("#bt").disabled = false; }
     return;
   }
   PREF.uf = uf; salvar(); MOSTRAR = 40;
@@ -1439,6 +1447,13 @@ $("#f-ordem").addEventListener("click", (e) => {
 });
 $("#f-ufs").addEventListener("change", (e) => {
   const u = e.target.dataset.uf; if (!u) return;
+  if (DADOS && DADOS.uf === "MEUS") {
+    if (!e.target.checked && PREF.ufs.length === 1) { e.target.checked = true; return; }  // pelo menos um estado
+    PREF.ufs = e.target.checked ? UFS.map((x) => x[0]).filter((x) => x === u || PREF.ufs.includes(x)) : PREF.ufs.filter((x) => x !== u);
+    salvar(); $("#uf").options[0].textContent = nomeMeus(); MOSTRAR = 40;
+    if (e.target.checked && !DADOS.status[u]) buscarVarios(pedido, [u], false); else desenhar();
+    return;
+  }
   UFSEL = e.target.checked ? [...new Set(UFSEL.concat(u))] : UFSEL.filter((x) => x !== u);
   MOSTRAR = 40; desenhar();
 });
