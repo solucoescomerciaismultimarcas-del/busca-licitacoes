@@ -55,6 +55,60 @@ def http_get(url, timeout=60):
     return json.loads(data.decode("utf-8"))
 
 
+# Conexões reaproveitadas com o PNCP: abrir conexão segura (https) a cada página gasta muito
+# processamento, e o servidor gratuito do Render é bem fraco. Assim abre uma vez e reaproveita.
+import http.client
+import ssl
+import threading
+_conexoes, _conexoes_lock = {}, threading.Lock()
+_SSL = ssl.create_default_context()
+
+
+def http_get_rapido(url, timeout=45):
+    """Igual ao http_get, mas reaproveita a conexão. Erros viram urllib.error.HTTPError como antes."""
+    u = urllib.parse.urlparse(url)
+    host, caminho = u.netloc, u.path + ("?" + u.query if u.query else "")
+    for tentativa in (1, 2):
+        with _conexoes_lock:
+            livres = _conexoes.setdefault(host, [])
+            c = livres.pop() if livres else None
+        nova = c is None
+        if nova:
+            proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+            if proxy:  # (só no ambiente de teste)
+                pr = urllib.parse.urlparse(proxy)
+                c = http.client.HTTPSConnection(pr.hostname, pr.port, timeout=timeout, context=_SSL)
+                c.set_tunnel(host, 443)
+            else:
+                c = http.client.HTTPSConnection(host, timeout=timeout, context=_SSL)
+        try:
+            c.timeout = timeout
+            if c.sock is not None:
+                c.sock.settimeout(timeout)
+            c.request("GET", caminho, headers={"User-Agent": UA, "Accept": "application/json", "Connection": "keep-alive"})
+            r = c.getresponse()
+            corpo = r.read()
+        except Exception:
+            c.close()
+            if nova or tentativa == 2:
+                raise
+            continue  # conexão velha que o PNCP fechou: tenta com uma nova
+        if r.getheader("Connection", "").lower() == "close":
+            c.close()
+        else:
+            with _conexoes_lock:
+                if len(_conexoes[host]) < 8:
+                    _conexoes[host].append(c)
+                else:
+                    c.close()
+        if r.status != 200:
+            import io
+            raise urllib.error.HTTPError(url, r.status, r.reason, r.headers, io.BytesIO(corpo))
+        if not corpo.strip():
+            return None
+        return json.loads(corpo.decode("utf-8"))
+
+
 def dominio(url):
     try:
         return urllib.parse.urlparse(str(url or "")).netloc.lower().replace("www.", "")
@@ -237,15 +291,15 @@ ASSISTENCIA = ["assistencia tecnica", "garantia on site", "garantia on-site", "g
 
 
 def _padrao(palavra):
-    """A palavra tem que começar no início de uma palavra do texto. Palavras curtas
+    """A palavra tem que começar no início de uma palavra do texto (a checagem fica em _CAT_RE). Palavras curtas
     também têm que terminar ali (aceitando plural), para "rodo" não pegar "rodovia"."""
     p = re.escape(palavra.strip())
     if len(palavra.strip()) <= 6:
-        return r"(?<![a-z])" + p + r"(s|es)?(?![a-z])"
-    return r"(?<![a-z])" + p
+        return p + r"(?:s|es)?(?![a-z])"
+    return p
 
 
-_CAT_RE = [(nome, re.compile("|".join(_padrao(x) for x in palavras))) for nome, palavras in CATEGORIAS]
+_CAT_RE = [(nome, re.compile(r"(?<![a-z])(?:" + "|".join(_padrao(x) for x in palavras) + ")")) for nome, palavras in CATEGORIAS]
 
 
 SERVICO = ["prestacao de servico", "prestacao de servicos", "servicos de", "servico de", "servicos continuos", "mao de obra",
@@ -255,8 +309,8 @@ SERVICO = ["prestacao de servico", "prestacao de servicos", "servicos de", "serv
            "credenciamento de", "selecao de pessoas", "agenciamento", "seguro", "publicidade", "buffet", "coffee break"]
 PRODUTO = ["aquisicao", "fornecimento de material", "fornecimento de materiais", "fornecimento de produto", "compra de",
            "material", "materiais", "equipamento", "produto", "genero", "insumo", "medicamento"]
-_SERV_RE = re.compile("|".join(r"(?<![a-z])" + re.escape(x) + r"(?![a-z])" for x in SERVICO))
-_PROD_RE = re.compile("|".join(r"(?<![a-z])" + re.escape(x) for x in PRODUTO))
+_SERV_RE = re.compile(r"(?<![a-z])(?:" + "|".join(re.escape(x) for x in SERVICO) + r")(?![a-z])")
+_PROD_RE = re.compile(r"(?<![a-z])(?:" + "|".join(re.escape(x) for x in PRODUTO) + ")")
 
 
 def tipo_de(texto):
@@ -351,7 +405,7 @@ def _pagina_proposta(uf, modalidade, pagina, tentativas=4):
     for t in range(1, tentativas + 1):
         try:
             with _PNCP_VAGAS:
-                return http_get(url, timeout=45) or {}
+                return http_get_rapido(url, timeout=45) or {}
         except urllib.error.HTTPError as e:
             if e.code == 204:
                 return {}
@@ -373,7 +427,7 @@ _cache, _lock = {}, threading.Lock()
 def buscar_modalidade(uf, modalidade):
     chave = f"{uf}|{modalidade}"
     with _lock:
-        if chave in _cache and time.time() - _cache[chave][0] < 1800:
+        if chave in _cache and time.time() - _cache[chave][0] < 7200:  # guarda 2 horas
             return _cache[chave][1]
     primeira = _pagina_proposta(uf, modalidade, 1)
     itens = list(primeira.get("data") or [])
@@ -490,7 +544,7 @@ def licitacao(id_pncp):
     cnpj, seq, ano = m.group(1), int(m.group(2)), m.group(3)
     chave = f"lic|{id_pncp}"
     with _lock:
-        if chave in _cache and time.time() - _cache[chave][0] < 1800:
+        if chave in _cache and time.time() - _cache[chave][0] < 7200:  # guarda 2 horas
             return _cache[chave][1]
     c = _get_bases(f"/orgaos/{cnpj}/compras/{ano}/{seq}")
     if not c:
@@ -1209,13 +1263,13 @@ async function buscar() {
   const uf = $("#uf").value, meu = ++pedido;
   if (uf === "BR") {
     PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
-    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas em todo o Brasil, estado por estado. A primeira vez leva alguns minutos; as licitações vão aparecendo enquanto isso.</div>`;
+    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas em todo o Brasil, estado por estado. A primeira vez leva uns 10 minutos (o PNCP é lento); as licitações vão aparecendo enquanto isso.</div>`;
     try { await buscarBrasil(meu); } finally { if (meu === pedido) $("#bt").disabled = false; }
     return;
   }
   PREF.uf = uf; salvar(); MOSTRAR = 40;
   $("#bt").disabled = true;
-  $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. A primeira busca de cada estado leva de 20 a 40 segundos; depois fica guardada por 30 minutos.</div>`;
+  $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. A primeira busca de cada estado leva de 20 a 40 segundos; depois fica guardada por 2 horas.</div>`;
   try {
     const r = await fetch(`/api/busca?uf=${uf}&mods=${PREF.mods.join(",")}`);
     const d = await r.json();
