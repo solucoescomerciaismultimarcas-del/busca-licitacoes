@@ -1074,7 +1074,8 @@ function resumirP(c) {
 }
 // no máximo 4 pedidos ao mesmo tempo, para o PNCP não recusar
 let VAGAS = 4; const ESPERA = [];
-async function vaga() { if (VAGAS > 0) { VAGAS--; return; } await new Promise((ok) => ESPERA.push(ok)); }
+const PRIORIDADE = new Set();  // estados que ela marcou: passam na frente
+async function vaga(prio) { if (VAGAS > 0) { VAGAS--; return; } await new Promise((ok) => prio ? ESPERA.unshift(ok) : ESPERA.push(ok)); }
 function soltaVaga() { const prox = ESPERA.shift(); if (prox) prox(); else VAGAS++; }
 const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
 function doisd(n) { return String(n).padStart(2, "0"); }
@@ -1083,7 +1084,7 @@ async function paginaP(uf, mod, pg) {
   const url = `${PNCP_URL}?dataFinal=${fim.getFullYear()}${doisd(fim.getMonth() + 1)}${doisd(fim.getDate())}&codigoModalidadeContratacao=${mod}&uf=${uf}&pagina=${pg}&tamanhoPagina=50`;
   for (let t = 1; t <= 5; t++) {
     let r;
-    await vaga();
+    await vaga(PRIORIDADE.has(uf));
     try { r = await fetch(url, {headers: {Accept: "application/json"}}); }
     catch (e) { soltaVaga(); if (t >= 2) throw new Error("sem conexão com o PNCP"); await dormir(1500); continue; }
     try {
@@ -1152,22 +1153,12 @@ let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "", DIA = "", MODO_DI
 let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto", ufs: [] };
 try { Object.assign(PREF, JSON.parse(localStorage.getItem("busca_pref") || "{}")); } catch (e) {}
 if (!Array.isArray(PREF.cats)) PREF.cats = [];
-PREF.ufs = [];  // abre carregando o Brasil todo, com nenhum estado marcado; ela marca os que quer ver
 if (typeof PREF.tipo !== "string") PREF.tipo = "Produto";
 PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e manutenção");
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
 
-function nomeMeus() { return PREF.ufs.join(", "); }
-// a lista de cima e os botões da esquerda mostram a mesma escolha
-function sincronizarLista() {
-  const sel = $("#uf"), op = sel.options[0];
-  op.textContent = nomeMeus();
-  op.hidden = PREF.ufs.length < 2;
-  sel.value = !PREF.ufs.length ? "BR" : PREF.ufs.length === 1 ? PREF.ufs[0] : "MEUS";
-}
-$("#uf").innerHTML = `<option value="MEUS">${nomeMeus()}</option><option value="BR">BRASIL — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
-PREF.uf = "MEUS";
-sincronizarLista();
+$("#uf").innerHTML = `<option value="BR">BRASIL — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
+$("#uf").value = "BR";
 $("#f-prazo").innerHTML = PRAZOS.map(([v, t], i) => `<label class="opc"><input type="radio" name="prazo" value="${v}"${i === 0 ? " checked" : ""}><span>${t}</span></label>`).join("");
 
 function diasAte(s) {
@@ -1203,7 +1194,7 @@ function filtrar() {
   return DADOS.itens.filter((x) =>
     (!PREF.portais.length || PREF.portais.includes(x.portal)) &&
     (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo) &&
-    (DADOS.uf === "MEUS" ? (!PREF.ufs.length || PREF.ufs.includes(x.uf)) : DADOS.uf !== "BR" || !UFSEL.length || UFSEL.includes(x.uf)) &&
+    (DADOS.uf !== "BR" || !UFSEL.length || UFSEL.includes(x.uf)) &&
     (!PREF.cats.length || (x.categorias || []).some((c) => PREF.cats.includes(c))) &&
     (!q.length || q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p))) &&
     (vmin == null || (x.valor || 0) >= vmin) && (vmax == null || (x.valor != null && x.valor <= vmax)) &&
@@ -1238,20 +1229,20 @@ function desenharCats() {
 }
 let UFSEL = [];
 function desenharUfs() {
-  sincronizarLista();
+  const atual = $("#uf").value;
   const c = {}, st = (DADOS && DADOS.status) || {};
   if (DADOS) DADOS.itens.filter((x) => (!PREF.portais.length || PREF.portais.includes(x.portal)) && (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo))
     .forEach((x) => { c[x.uf] = (c[x.uf] || 0) + 1; });
   const falhos = UFS.map((u) => u[0]).filter((u) => st[u] === "erro");
   $("#f-ufs").innerHTML = `<div class="ufs">` +
-    `<button type="button" class="ufc br" data-uf="BR" aria-pressed="false" title="Mostrar todos os estados (tira as marcações)">Brasil</button>` +
+    `<button type="button" class="ufc br" data-uf="BR" aria-pressed="${atual === "BR"}" title="Todos os estados">Brasil</button>` +
     UFS.map(([u, n]) => {
-      const sel = PREF.ufs.includes(u), s = st[u];
+      const sel = atual === u, s = DADOS && DADOS.uf === "BR" ? st[u] : null;
       const cls = s === "erro" ? " uf-erro" : "";
-      const dica = n + (s === "ok" ? `: ${c[u] || 0} licitações` : s === "erro" ? ": o PNCP não respondeu" : DADOS ? ": carregando..." : "");
+      const dica = n + (s === "ok" ? `: ${c[u] || 0} licitações` : s === "erro" ? ": o PNCP não respondeu" : "");
       return `<button type="button" class="ufc${cls}" data-uf="${u}" aria-pressed="${sel}" title="${esc(dica)}">${u}</button>`;
     }).join("") + `</div>` +
-    `<div class="uf-info">${falhos.length ? `<b style="color:var(--bad)">${falhos.join(", ")}: o PNCP não respondeu.</b> Clique em Buscar para tentar de novo.` : (PREF.ufs.length ? "Clique para marcar ou desmarcar. Brasil mostra todos." : "Mostrando todos. Clique nos estados que quer ver.")}</div>`;
+    `<div class="uf-info">${falhos.length ? `<b style="color:var(--bad)">${falhos.join(", ")}: o PNCP não respondeu.</b> Clique em Buscar para tentar de novo.` : "Clique num estado, ou em Brasil para todos."}</div>`;
 }
 function desenharMods() {
   const c = DADOS ? contar(DADOS.itens, "modalidade") : {};
@@ -1370,14 +1361,16 @@ async function abrirDet(id) {
 function desenhar() {
   desenharPortais(); desenharCats(); desenharMods(); desenharUfs();
   if (!DADOS) return;
-  const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : DADOS.uf === "MEUS" ? (!PREF.ufs.length ? "todo o Brasil" : PREF.ufs.length === 1 ? (UFS.find((u) => u[0] === PREF.ufs[0]) || ["", PREF.ufs[0]])[1] : PREF.ufs.join(", ")) : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
+  const lista = filtrar(), nome = DADOS.uf === "BR" ? (UFSEL.length === 1 ? (UFS.find((u) => u[0] === UFSEL[0]) || ["", UFSEL[0]])[1] : "todo o Brasil") : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
   let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
   if (DADOS.progresso) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Carregando os estados: ${DADOS.progresso.feitos} de ${DADOS.progresso.total}. As licitações vão aparecendo enquanto isso.</div>`;
   if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
-  if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
+  const esperando = DADOS.uf === "BR" && UFSEL.length === 1 && DADOS.status[UFSEL[0]] !== "ok" && DADOS.status[UFSEL[0]] !== "erro";
+  if (!lista.length && esperando) h += `<div class="carregando"><div class="spin"></div>Carregando ${esc(UFSEL[0])}… ele passou na frente da fila e já vem.</div>`;
+  else if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
   h += lista.slice(0, MOSTRAR).map(cartao).join("");
   if (lista.length > MOSTRAR) h += `<button type="button" class="mais" id="mais">Mostrar mais (${(lista.length - MOSTRAR).toLocaleString("pt-BR")} restantes)</button>`;
   $("#res").innerHTML = h;
@@ -1406,21 +1399,31 @@ async function buscarVarios(meu, lista, novo, modo) {
       return true;
     } catch (e) { return false; }
   }
+  async function processa(uf, ultima, falhas, fila) {
+    const ok = await umEstado(uf);
+    if (meu !== pedido || DADOS !== meuDados) return false;
+    DADOS.carregando.delete(uf);
+    if (ok) { DADOS.status[uf] = "ok"; DADOS.progresso.feitos++; }
+    else if (ultima) { DADOS.status[uf] = "erro"; DADOS.progresso.feitos++; DADOS.erros.push(uf); }
+    else falhas.push(uf);
+    if (PRIORIDADE.has(uf) || Date.now() - ultimoDesenho > 1500 || !fila.length) { ultimoDesenho = Date.now(); desenhar(); }
+    return true;
+  }
   async function rodada(fila, nos, ultima) {
-    const falhas = [];
+    const falhas = [], extras = [];
+    // estado marcado por ela que ainda está esperando na fila: sai da fila e começa já
+    if (!ultima) DADOS.furarFila = (uf) => {
+      const i = fila.indexOf(uf); if (i < 0) return;
+      fila.splice(i, 1); extras.push(processa(uf, false, falhas, fila));
+    };
     async function trabalhador() {
       while (fila.length) {
-        const uf = fila.shift();
-        const ok = await umEstado(uf);
-        if (meu !== pedido || DADOS !== meuDados) return;
-        DADOS.carregando.delete(uf);
-        if (ok) { DADOS.status[uf] = "ok"; DADOS.progresso.feitos++; }
-        else if (ultima) { DADOS.status[uf] = "erro"; DADOS.progresso.feitos++; DADOS.erros.push(uf); }
-        else falhas.push(uf);
-        if (Date.now() - ultimoDesenho > 1500 || !fila.length) { ultimoDesenho = Date.now(); desenhar(); }
+        if (!(await processa(fila.shift(), ultima, falhas, fila))) return;
       }
     }
     await Promise.all(Array.from({length: nos}, trabalhador));
+    while (extras.length) await extras.shift();
+    if (!ultima) DADOS.furarFila = null;
     return falhas;
   }
   let falhas = await rodada(lista.slice(), 3, false);  // 3 estados por vez (no máximo 4 pedidos ao PNCP ao mesmo tempo)
@@ -1433,13 +1436,13 @@ async function buscarVarios(meu, lista, novo, modo) {
   desenhar();
 }
 async function buscar() {
-  const uf = "MEUS", meu = ++pedido;
+  const uf = "BR", meu = ++pedido;
   if (uf === "BR" || uf === "MEUS") {
     PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
     try { await buscarVarios(meu, UFS.map((u) => u[0]), true, uf); } finally { if (meu === pedido) $("#bt").disabled = false; }
     return;
   }
-  PREF.uf = uf; salvar(); MOSTRAR = 40;
+  PREF.uf = uf; salvar(); MOSTRAR = 40; desenharUfs();
   $("#bt").disabled = true;
   $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. Leva alguns segundos.</div>`;
   try {
@@ -1453,7 +1456,7 @@ async function buscar() {
 
 $("#f").addEventListener("submit", (e) => {
   e.preventDefault();
-  if (!DADOS || DADOS.uf !== "MEUS") return buscar();
+  if (!DADOS || DADOS.uf !== "BR") return buscar();
   // Brasil / meus estados: "Buscar" de novo tenta só os estados que falharam
   if ((DADOS.uf === "BR" || DADOS.uf === "MEUS") && !DADOS.progresso && DADOS.erros.length) {
     const falhos = DADOS.erros.filter((u) => /^[A-Z]{2}$/.test(u));
@@ -1461,12 +1464,18 @@ $("#f").addEventListener("submit", (e) => {
   }
   MOSTRAR = 40; desenhar();
 });
-$("#uf").addEventListener("change", () => {
-  const v = $("#uf").value, antes = PREF.ufs.slice();
-  if (v === "MEUS") return sincronizarLista();
-  PREF.ufs = v === "BR" ? [] : [v];
-  aplicarUfs(antes);
-});
+function escolherUf(v) {
+  UFSEL = v === "BR" ? [] : [v];
+  $("#uf").value = v; MOSTRAR = 40;
+  if (!DADOS || DADOS.uf !== "BR") { buscar(); UFSEL = v === "BR" ? [] : [v]; return; }
+  if (v !== "BR" && DADOS.status[v] !== "ok") {
+    PRIORIDADE.clear(); PRIORIDADE.add(v);
+    if (DADOS.carregando && DADOS.carregando.has(v)) { if (DADOS.furarFila) DADOS.furarFila(v); }
+    else buscarVarios(pedido, [v], false);  // tinha falhado: tenta de novo
+  }
+  desenhar();
+}
+$("#uf").addEventListener("change", () => escolherUf($("#uf").value));
 $("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
 function hojeMais(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
@@ -1487,23 +1496,8 @@ $("#f-ordem").addEventListener("click", (e) => {
 });
 $("#f-ufs").addEventListener("click", (e) => {
   const bt = e.target.closest("button[data-uf]"); if (!bt) return;
-  const u = bt.dataset.uf, antes = PREF.ufs.slice();
-  if (u === "BR") {
-    PREF.ufs = [];
-  } else if (PREF.ufs.includes(u)) {
-    PREF.ufs = PREF.ufs.filter((x) => x !== u);
-  } else {
-    PREF.ufs = UFS.map((x) => x[0]).filter((x) => x === u || PREF.ufs.includes(x));
-  }
-  aplicarUfs(antes);
+  escolherUf(bt.dataset.uf);
 });
-function aplicarUfs(antes) {
-  PREF.ufsEscolhidos = true;
-  salvar(); sincronizarLista(); MOSTRAR = 40;
-  if (!DADOS || DADOS.uf !== "MEUS") return buscar();
-  const novos = PREF.ufs.filter((x) => !antes.includes(x) && DADOS.status[x] !== "ok" && !(DADOS.progresso && DADOS.carregando && DADOS.carregando.has(x)));
-  if (novos.length) buscarVarios(pedido, novos, false); else desenhar();
-}
 $("#f-portal").addEventListener("change", (e) => {
   const p = e.target.dataset.portal; if (p == null) return;
   PREF.portais = e.target.checked ? [...new Set(PREF.portais.concat(p))] : PREF.portais.filter((x) => x !== p);
@@ -1651,9 +1645,10 @@ if (location.pathname === "/licitacao" && qs.get("id")) {
   paginaLicitacao(qs.get("id"));
 } else {
 desenhar();
-if (qs.get("uf") && UFS.some((u) => u[0] === qs.get("uf").toUpperCase())) { PREF.ufs = [qs.get("uf").toUpperCase()]; PREF.ufsEscolhidos = true; }
 if (qs.get("q")) $("#q").value = qs.get("q");
 buscar();
+const ufInicial = (qs.get("uf") || "").toUpperCase();
+if (UFS.some((u) => u[0] === ufInicial)) escolherUf(ufInicial);
 }
 </script>
 </body>
