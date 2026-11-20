@@ -514,6 +514,10 @@ aside summary::-webkit-details-marker{display:none}
 .tag.prazo.urg{color:var(--bad);border-color:#7a2f2f;background:var(--bad-bg)}
 .tag.portal{color:var(--muted)}
 .tag.portal.meu{color:var(--gold);border-color:#7a5a12;background:var(--gold-soft)}
+.selo-cg{display:inline-flex;align-items:center;gap:6px;font:800 12px var(--font);padding:3px 10px 3px 4px;border-radius:7px;background:#1351b4;color:#fff;border:1px solid #2a6bd1;white-space:nowrap;letter-spacing:.01em}
+.selo-cg i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:#ffcd07;color:#0c326f;font-style:normal}
+.selo-cg i svg{display:block}
+.selo-cg em{font-style:normal;color:#ffcd07}
 .corpo{grid-column:1;min-width:0}
 .corpo h3{margin:4px 0 2px;font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:.01em;overflow-wrap:anywhere}
 .obj{color:var(--muted);font-size:14px;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;overflow-wrap:anywhere}
@@ -722,7 +726,7 @@ function cartao(x) {
       ${dias != null ? `<span class="tag prazo${urg ? " urg" : ""}">${textoPrazo(dias)}</span>` : ""}
       <span class="tag">📍 ${esc(x.uf)}</span>
       ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
-      <span class="tag portal${meu ? " meu" : ""}">${esc(x.portal)}</span>
+      ${seloPortal(x.portal)}
     </div>
     <div class="corpo">
       <h3><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">${esc(x.orgao)}</a></h3>
@@ -737,13 +741,16 @@ function cartao(x) {
       ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
       ${x.cnpj ? `<a class="pag" href="${CONSULTA}${esc(x.cnpj)}" target="_blank" rel="noopener">É bom pagador?</a>` : ""}
-      ${x.id ? `<a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">📄 Detalhes, documentos e itens</a>` : ""}
     </div>
     ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id], x)}</div>` : ""}
   </article>`;
 }
 
 const ABERTOS = {}, DET = {};
+function seloPortal(p) {
+  if (p === "Compras.gov.br") return `<span class="selo-cg" title="Licitação do Compras.gov.br"><i><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.5 11h11L21 7H6.5"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg></i><span>Compras<em>.gov.br</em></span></span>`;
+  return `<span class="tag portal${MEUS.includes(p) ? " meu" : ""}">${esc(p)}</span>`;
+}
 const ICDOC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6v18h12V7l-4-4z"/><path d="M14 3v4h4M12 11v6M9 14l3 3 3-3"/></svg>';
 function qtd(v) { return v == null ? "" : Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 4}); }
 function dataSo(s) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; }
@@ -914,7 +921,7 @@ async function paginaLicitacao(id) {
         ${dias != null && dias >= 0 ? `<span class="tag prazo${dias <= 2 ? " urg" : ""}">${textoPrazo(dias)}</span>` : ""}
         <span class="tag">📍 ${esc(x.uf)}</span>
         ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
-        <span class="tag portal${meu ? " meu" : ""}">${esc(x.portal)}</span>
+        ${seloPortal(x.portal)}
       </div>
       <h2>${esc(x.objeto)}</h2>
       <div class="org">${esc(x.orgao)} <small>· ${esc(x.unidade)}${x.municipio ? " · " + esc(x.municipio) + " - " + esc(x.uf) : ""}</small></div>
