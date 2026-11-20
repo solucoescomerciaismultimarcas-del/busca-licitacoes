@@ -64,6 +64,35 @@ _conexoes, _conexoes_lock = {}, threading.Lock()
 _SSL = ssl.create_default_context()
 
 
+_estat = {"inicio": time.strftime("%d/%m %H:%M"), "pedidos": 0, "ok": 0, "segundos_ok": 0.0, "codigos": Counter(),
+          "falhas": Counter(), "ultimos_erros": []}
+
+
+def _anota(t0, codigo=None, erro=None):
+    with _conexoes_lock:
+        _estat["pedidos"] += 1
+        if codigo == 200:
+            _estat["ok"] += 1
+            _estat["segundos_ok"] += time.time() - t0
+        elif codigo is not None:
+            _estat["codigos"][codigo] += 1
+        if erro:
+            _estat["falhas"][erro[:60]] += 1
+            _estat["ultimos_erros"] = (_estat["ultimos_erros"] + [time.strftime("%H:%M:%S ") + erro[:120]])[-8:]
+
+
+def diagnostico_velocidade():
+    e = _estat
+    media = e["segundos_ok"] / e["ok"] if e["ok"] else 0
+    linhas = [f"DIAGNOSTICO VELOCIDADE (desde {e['inicio']})",
+              f"pedidos ao PNCP: {e['pedidos']} | deram certo: {e['ok']} | tempo medio: {media:.1f}s",
+              f"recusas do PNCP (codigo: vezes): {dict(e['codigos']) or 'nenhuma'}",
+              f"falhas de conexao: {dict(e['falhas']) or 'nenhuma'}",
+              f"estados guardados: {sorted({k.split('|')[0] for k in _cache if '|' in k and not k.startswith('lic')})}",
+              "ultimos erros:"] + (e["ultimos_erros"] or ["nenhum"])
+    return "\n".join(linhas)
+
+
 def http_get_rapido(url, timeout=45):
     """Igual ao http_get, mas reaproveita a conexão. Erros viram urllib.error.HTTPError como antes."""
     u = urllib.parse.urlparse(url)
@@ -81,6 +110,7 @@ def http_get_rapido(url, timeout=45):
                 c.set_tunnel(host, 443)
             else:
                 c = http.client.HTTPSConnection(host, timeout=timeout, context=_SSL)
+        t0 = time.time()
         try:
             c.timeout = timeout
             if c.sock is not None:
@@ -88,11 +118,13 @@ def http_get_rapido(url, timeout=45):
             c.request("GET", caminho, headers={"User-Agent": UA, "Accept": "application/json", "Connection": "keep-alive"})
             r = c.getresponse()
             corpo = r.read()
-        except Exception:
+        except Exception as e:
             c.close()
             if nova or tentativa == 2:
+                _anota(t0, erro=type(e).__name__ + ": " + str(e))
                 raise
             continue  # conexão velha que o PNCP fechou: tenta com uma nova
+        _anota(t0, codigo=r.status)
         if r.getheader("Connection", "").lower() == "close":
             c.close()
         else:
@@ -1542,6 +1574,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, json.dumps({"erro": str(e)}, ensure_ascii=False), "application/json; charset=utf-8")
             except Exception as e:
                 return self._send(502, json.dumps({"erro": erro_txt(e)}, ensure_ascii=False), "application/json; charset=utf-8")
+        if u.path == "/diagnostico3":
+            return self._send(200, diagnostico_velocidade(), "text/plain; charset=utf-8")
         if u.path == "/diagnostico2":
             try:
                 txt = diagnostico_busca()
