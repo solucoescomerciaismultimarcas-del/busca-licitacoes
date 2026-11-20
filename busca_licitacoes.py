@@ -1158,7 +1158,7 @@ PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e m
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
 
 $("#uf").innerHTML = `<option value="BR">BRASIL — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
-$("#uf").value = "BR";
+$("#uf").value = "DF";  // abre sempre no DF; Brasil só se ela escolher
 $("#f-prazo").innerHTML = PRAZOS.map(([v, t], i) => `<label class="opc"><input type="radio" name="prazo" value="${v}"${i === 0 ? " checked" : ""}><span>${t}</span></label>`).join("");
 
 function diasAte(s) {
@@ -1361,16 +1361,14 @@ async function abrirDet(id) {
 function desenhar() {
   desenharPortais(); desenharCats(); desenharMods(); desenharUfs();
   if (!DADOS) return;
-  const lista = filtrar(), nome = DADOS.uf === "BR" ? (UFSEL.length === 1 ? (UFS.find((u) => u[0] === UFSEL[0]) || ["", UFSEL[0]])[1] : "todo o Brasil") : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
+  const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
   let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
   if (DADOS.progresso) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Carregando os estados: ${DADOS.progresso.feitos} de ${DADOS.progresso.total}. As licitações vão aparecendo enquanto isso.</div>`;
   if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
-  const esperando = DADOS.uf === "BR" && UFSEL.length === 1 && DADOS.status[UFSEL[0]] !== "ok" && DADOS.status[UFSEL[0]] !== "erro";
-  if (!lista.length && esperando) h += `<div class="carregando"><div class="spin"></div>Carregando ${esc(UFSEL[0])}… ele passou na frente da fila e já vem.</div>`;
-  else if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
+  if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
   h += lista.slice(0, MOSTRAR).map(cartao).join("");
   if (lista.length > MOSTRAR) h += `<button type="button" class="mais" id="mais">Mostrar mais (${(lista.length - MOSTRAR).toLocaleString("pt-BR")} restantes)</button>`;
   $("#res").innerHTML = h;
@@ -1436,7 +1434,7 @@ async function buscarVarios(meu, lista, novo, modo) {
   desenhar();
 }
 async function buscar() {
-  const uf = "BR", meu = ++pedido;
+  const uf = $("#uf").value, meu = ++pedido;
   if (uf === "BR" || uf === "MEUS") {
     PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
     try { await buscarVarios(meu, UFS.map((u) => u[0]), true, uf); } finally { if (meu === pedido) $("#bt").disabled = false; }
@@ -1456,7 +1454,7 @@ async function buscar() {
 
 $("#f").addEventListener("submit", (e) => {
   e.preventDefault();
-  if (!DADOS || DADOS.uf !== "BR") return buscar();
+  if (!DADOS || DADOS.uf !== $("#uf").value) return buscar();
   // Brasil / meus estados: "Buscar" de novo tenta só os estados que falharam
   if ((DADOS.uf === "BR" || DADOS.uf === "MEUS") && !DADOS.progresso && DADOS.erros.length) {
     const falhos = DADOS.erros.filter((u) => /^[A-Z]{2}$/.test(u));
@@ -1464,18 +1462,7 @@ $("#f").addEventListener("submit", (e) => {
   }
   MOSTRAR = 40; desenhar();
 });
-function escolherUf(v) {
-  UFSEL = v === "BR" ? [] : [v];
-  $("#uf").value = v; MOSTRAR = 40;
-  if (!DADOS || DADOS.uf !== "BR") { buscar(); UFSEL = v === "BR" ? [] : [v]; return; }
-  if (v !== "BR" && DADOS.status[v] !== "ok") {
-    PRIORIDADE.clear(); PRIORIDADE.add(v);
-    if (DADOS.carregando && DADOS.carregando.has(v)) { if (DADOS.furarFila) DADOS.furarFila(v); }
-    else buscarVarios(pedido, [v], false);  // tinha falhado: tenta de novo
-  }
-  desenhar();
-}
-$("#uf").addEventListener("change", () => escolherUf($("#uf").value));
+$("#uf").addEventListener("change", buscar);
 $("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
 function hojeMais(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
@@ -1496,7 +1483,8 @@ $("#f-ordem").addEventListener("click", (e) => {
 });
 $("#f-ufs").addEventListener("click", (e) => {
   const bt = e.target.closest("button[data-uf]"); if (!bt) return;
-  escolherUf(bt.dataset.uf);
+  if ($("#uf").value === bt.dataset.uf && DADOS) return;
+  $("#uf").value = bt.dataset.uf; buscar();
 });
 $("#f-portal").addEventListener("change", (e) => {
   const p = e.target.dataset.portal; if (p == null) return;
@@ -1645,10 +1633,9 @@ if (location.pathname === "/licitacao" && qs.get("id")) {
   paginaLicitacao(qs.get("id"));
 } else {
 desenhar();
+if (qs.get("uf")) $("#uf").value = qs.get("uf").toUpperCase();
 if (qs.get("q")) $("#q").value = qs.get("q");
 buscar();
-const ufInicial = (qs.get("uf") || "").toUpperCase();
-if (UFS.some((u) => u[0] === ufInicial)) escolherUf(ufInicial);
 }
 </script>
 </body>
