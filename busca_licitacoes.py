@@ -312,12 +312,31 @@ def _get_tentando(url, tentativas=3):
         except urllib.error.HTTPError as e:
             if e.code in (204, 404):
                 return None
+            if e.code in (301, 302, 307, 308):
+                raise
             if e.code < 500 and e.code != 429:
                 raise
         except Exception:
             if t == tentativas:
                 raise
         time.sleep(1.5 * t)
+    return None
+
+
+def _get_bases(caminho):
+    """O PNCP mudou alguns endereços de /api/pncp/v1 para /api/consulta/v1: tenta os dois."""
+    ultimo = None
+    for base in (PNCP, PNCP_API):
+        try:
+            r = _get_tentando(base + caminho)
+            if r is not None:
+                return r
+        except urllib.error.HTTPError as e:
+            ultimo = e
+            if e.code not in (301, 302, 307, 308, 400, 404, 405):
+                raise
+    if ultimo is not None and ultimo.code not in (301, 302, 307, 308, 404):
+        raise ultimo
     return None
 
 
@@ -331,10 +350,11 @@ def detalhes(id_pncp):
     with _lock:
         if chave in _cache and time.time() - _cache[chave][0] < 3600:
             return _cache[chave][1]
-    base = f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}"
+    caminho = f"/orgaos/{cnpj}/compras/{ano}/{seq}"
+    base = f"{PNCP_API}{caminho}"
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f_arq = ex.submit(_get_tentando, f"{base}/arquivos")
-        f_itens = ex.submit(_get_tentando, f"{base}/itens?pagina=1&tamanhoPagina=500")
+        f_arq = ex.submit(_get_bases, f"{caminho}/arquivos")
+        f_itens = ex.submit(_get_bases, f"{caminho}/itens?pagina=1&tamanhoPagina=500")
         arquivos, itens, erros = [], [], []
         try:
             for a in (f_arq.result() or []):
@@ -376,7 +396,7 @@ def licitacao(id_pncp):
     with _lock:
         if chave in _cache and time.time() - _cache[chave][0] < 1800:
             return _cache[chave][1]
-    c = _get_tentando(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}")
+    c = _get_bases(f"/orgaos/{cnpj}/compras/{ano}/{seq}")
     if not c:
         raise ValueError("Não encontrei essa licitação no PNCP.")
     res = resumir(c, portal_de(c))
