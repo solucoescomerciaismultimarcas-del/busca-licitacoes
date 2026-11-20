@@ -1094,7 +1094,13 @@ async function modalidadeP(uf, mod) {
   let itens = (p1.data || []).slice();
   const tot = p1.totalPaginas || 1, pags = Math.min(30, tot), outras = [];
   for (let pg = 2; pg <= pags; pg++) outras.push(paginaP(uf, mod, pg));
-  for (const r of await Promise.all(outras)) itens = itens.concat(r.data || []);
+  const rs = await Promise.allSettled(outras);
+  // páginas que o PNCP recusou: espera um pouco e tenta de novo, uma de cada vez
+  for (let i = 0; i < rs.length; i++) {
+    if (rs[i].status === "fulfilled") { itens = itens.concat(rs[i].value.data || []); continue; }
+    await dormir(8000);
+    itens = itens.concat((await paginaP(uf, mod, i + 2)).data || []);  // se falhar de novo, o estado aparece como "falhou"
+  }
   const d = new Date(), agora = `${d.getFullYear()}-${doisd(d.getMonth() + 1)}-${doisd(d.getDate())}T${doisd(d.getHours())}:${doisd(d.getMinutes())}`;
   const lista = itens.map(resumirP).filter((x) => !(x.encerramento && x.encerramento < agora));
   const res = {itens: lista, cortado: tot > 30};
@@ -1425,7 +1431,16 @@ async function buscar() {
   } finally { if (meu === pedido) $("#bt").disabled = false; }
 }
 
-$("#f").addEventListener("submit", (e) => { e.preventDefault(); if (!DADOS || DADOS.uf !== $("#uf").value) buscar(); else { MOSTRAR = 40; desenhar(); } });
+$("#f").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!DADOS || DADOS.uf !== $("#uf").value) return buscar();
+  // Brasil / meus estados: "Buscar" de novo tenta só os estados que falharam
+  if ((DADOS.uf === "BR" || DADOS.uf === "MEUS") && !DADOS.progresso && DADOS.erros.length) {
+    const falhos = DADOS.erros.filter((u) => /^[A-Z]{2}$/.test(u));
+    if (falhos.length) { buscarVarios(pedido, falhos, false); return; }
+  }
+  MOSTRAR = 40; desenhar();
+});
 $("#uf").addEventListener("change", buscar);
 $("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
