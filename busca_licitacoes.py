@@ -21,6 +21,13 @@ from collections import Counter
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# O servidor do Render usa o horário de Londres; as datas do PNCP são de Brasília.
+os.environ["TZ"] = "America/Sao_Paulo"
+try:
+    time.tzset()
+except AttributeError:  # Windows não tem tzset
+    pass
+
 PORT = int(os.environ.get("PORT", "8000"))
 PNCP = "https://pncp.gov.br/api/consulta/v1"
 UA = "busca-licitacoes/1.0"
@@ -191,6 +198,84 @@ def sem_acento(s):
     return unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower()
 
 
+# Categoria -> palavras (sem acento) que aparecem no objeto da licitação
+CATEGORIAS = [
+    ("Eletrodomésticos", ["eletrodomestic", "eletroportat", "liquidificador", "geladeira", "refrigerador", "freezer", "frigobar",
+                          "micro-ondas", "microondas", "micro ondas", "fogao", "forno eletrico", "ventilador", "climatizador",
+                          "ar condicionado", "ar-condicionado", "condicionador de ar", "bebedouro", "purificador de agua",
+                          "cafeteira", "sanduicheira", "fritadeira", "air fryer", "airfryer", "batedeira", "espremedor",
+                          "chaleira eletrica", "ferro de passar", "aspirador", "lavadora", "maquina de lavar", "secadora",
+                          "televisor", "televisao", "smart tv", "umidificador", "exaustor", "coifa", "cooktop", "processador de alimentos"]),
+    ("Material de escritório", ["material de escritorio", "material de expediente", "papel a4", "papel sulfite", "papel oficio",
+                                "caneta", "lapis", "grampeador", "grampo", "clips", "envelope", "marca texto", "marca-texto",
+                                "papelaria", "arquivo morto", "corretivo", "perfurador", "post-it", "bloco de notas", "pasta suspensa"]),
+    ("Informática", ["informatica", "computador", "notebook", "desktop", "monitor", "impressora", "multifuncional", "toner",
+                     "cartucho", "teclado", "mouse", "nobreak", "no-break", "servidor de rede", "switch", "roteador",
+                     "tablet", "ssd", "pen drive", "pendrive", "projetor", "webcam", "licenca de software", "tecnologia da informacao"]),
+    ("Limpeza e higiene", ["limpeza", "higiene", "detergente", "desinfetante", "sabao", "agua sanitaria", "papel higienico",
+                           "papel toalha", "saco de lixo", "sacos de lixo", "vassoura", "rodo", "alcool", "sabonete", "limpador",
+                           "conservacao e limpeza"]),
+    ("Alimentos", ["genero alimenticio", "generos alimenticios", "alimento", "merenda", "alimentacao", "cafe ", "acucar",
+                   "leite", "carne", "hortifruti", "frutas", "verduras", "cesta basica", "refeic", "lanche", "agua mineral", "pao "]),
+    ("Copa e cozinha", ["copo descartavel", "copos descartaveis", "copa e cozinha", "utensilio", "panela", "talher", "prato",
+                        "garrafa termica", "descartave", "guardanapo", "filtro de papel"]),
+    ("Móveis", ["mobiliario", "moveis", "cadeira", "mesa ", "mesas", "armario", "estante", "arquivo de aco", "sofa", "poltrona",
+                "balcao", "gaveteiro", "longarina"]),
+    ("Material de construção", ["material de construcao", "materiais de construcao", "material eletrico", "materiais eletricos",
+                               "material hidraulico", "materiais hidraulicos", "tinta", "cimento", "ferramenta", "lampada",
+                               "fio eletrico", "cabo eletrico", "tubo pvc", "tubos", "conexoes", "torneira", "fechadura",
+                               "parafuso", "areia", "brita", "tijolo", "madeira", "telha"]),
+    ("Veículos, peças e combustível", ["veiculo", "pneu", "pecas automotiv", "peca automotiv", "combustivel", "gasolina", "diesel",
+                                      "oleo lubrificante", "motocicleta", "moto", "onibus", "ambulancia", "caminhao", "automotiv", "frota"]),
+    ("Saúde e medicamentos", ["medicamento", "hospitalar", "odontolog", "laboratori", "luva", "mascara", "seringa", "curativo",
+                             "equipamento medico", "material medico", "saude", "farmac", "insumos medic"]),
+    ("Uniformes, calçados e EPI", ["uniforme", "fardamento", "camiseta", "camisa", "calcado", "bota", "epi ", "equipamento de protecao",
+                                  "colete", "jaleco", "bone"]),
+    ("Eventos, gráfica e brindes", ["grafica", "impressao de", "banner", "brinde", "evento", "buffet", "coffee break", "decoracao"]),
+]
+ASSISTENCIA = ["assistencia tecnica", "garantia on site", "garantia on-site", "garantia onsite", "rede autorizada", "instalacao"]
+
+
+def _padrao(palavra):
+    """A palavra tem que começar no início de uma palavra do texto. Palavras curtas
+    também têm que terminar ali (aceitando plural), para "rodo" não pegar "rodovia"."""
+    p = re.escape(palavra.strip())
+    if len(palavra.strip()) <= 6:
+        return r"(?<![a-z])" + p + r"(s|es)?(?![a-z])"
+    return r"(?<![a-z])" + p
+
+
+_CAT_RE = [(nome, re.compile("|".join(_padrao(x) for x in palavras))) for nome, palavras in CATEGORIAS]
+
+
+SERVICO = ["prestacao de servico", "prestacao de servicos", "servicos de", "servico de", "servicos continuos", "mao de obra",
+           "obra", "obras", "reforma", "pavimentacao", "pavimento", "recapeamento", "engenharia", "execucao de", "terceirizacao",
+           "terceirizado", "vigilancia", "consultoria", "assessoria", "locacao", "manutencao preventiva", "manutencao corretiva",
+           "manutencao predial", "limpeza e conservacao", "transporte de", "custodia", "auditoria", "treinamento", "capacitacao",
+           "credenciamento de", "selecao de pessoas", "agenciamento", "seguro", "publicidade", "buffet", "coffee break"]
+PRODUTO = ["aquisicao", "fornecimento de material", "fornecimento de materiais", "fornecimento de produto", "compra de",
+           "material", "materiais", "equipamento", "produto", "genero", "insumo", "medicamento"]
+_SERV_RE = re.compile("|".join(r"(?<![a-z])" + re.escape(x) + r"(?![a-z])" for x in SERVICO))
+_PROD_RE = re.compile("|".join(r"(?<![a-z])" + re.escape(x) for x in PRODUTO))
+
+
+def tipo_de(texto):
+    """'Produto' ou 'Serviço', pelas palavras do objeto. Na dúvida, fica como produto (para não esconder oportunidade)."""
+    t = sem_acento(texto)
+    if _SERV_RE.search(t):
+        # "aquisição de peças... incluindo instalação" continua produto; "prestação de serviços... e fornecimento de peças" é serviço
+        if _PROD_RE.search(t) and not re.search(r"(?<![a-z])(prestacao de servic|servicos? de|mao de obra|obras?|reforma|pavimenta|engenharia|locacao|terceiriza|vigilancia|consultoria|assessoria)", t):
+            return "Produto"
+        return "Serviço"
+    return "Produto"
+
+
+def categorias_de(texto):
+    t = sem_acento(texto).replace("mao de obra", "mao-de-servico")
+    cats = [nome for nome, rx in _CAT_RE if rx.search(t)]
+    return cats or ["Outros"]
+
+
 def portal_de(c):
     usuario = sem_acento(c.get("usuarioNome"))
     links = " ".join(str(c.get(k) or "").lower() for k in ("linkSistemaOrigem", "linkProcessoEletronico"))
@@ -241,6 +326,10 @@ def resumir(c, portal):
         "encerramento": str(c.get("dataEncerramentoProposta") or "")[:16],
         "publicacao": str(c.get("dataPublicacaoPncp") or "")[:16],
         "portal": portal,
+        "categorias": categorias_de(str(c.get("objetoCompra") or "")),
+        "tipo": tipo_de(str(c.get("objetoCompra") or "")),
+        "assistencia": ("Eletrodomésticos" in categorias_de(str(c.get("objetoCompra") or "")))
+                       or any(p in sem_acento(str(c.get("objetoCompra") or "") + " " + str(c.get("informacaoComplementar") or "")) for p in ASSISTENCIA),
         "complemento": re.sub(r"\s+", " ", str(c.get("informacaoComplementar") or "")).strip()[:1500],
         "processo": str(c.get("processo") or ""),
         "amparo": (c.get("amparoLegal") or {}).get("nome") or "",
@@ -456,6 +545,113 @@ def buscar(uf, modalidades):
             "atualizado": time.strftime("%d/%m/%Y %H:%M")}
 
 
+# ================================================================ e-mail diário
+# Configuração (no Render, em Environment):
+#   RESEND_API_KEY  chave do serviço de e-mail Resend (grátis)
+#   ALERTA_EMAIL    e-mail que recebe o resumo (o mesmo da conta do Resend)
+#   ALERTA_CHAVE    uma senha qualquer, que o despertador (cron-job.org) usa para chamar o envio
+#   ALERTA_UF       estado(s), separados por vírgula. Padrão: DF
+#   ALERTA_PORTAIS  portal(is), separados por vírgula. Padrão: Compras.gov.br
+#   ALERTA_PALAVRAS palavras-chave separadas por vírgula (vazio = todos os assuntos)
+SITE = os.environ.get("SITE_URL", "https://busca-licitacoes-j9vl.onrender.com")
+_envio = {"rodando": False, "ultimo": ""}
+
+
+def _lista_env(nome, padrao=""):
+    return [x.strip() for x in os.environ.get(nome, padrao).split(",") if x.strip()]
+
+
+def _html_email(novas, urgentes, ufs, portais, palavras):
+    from html import escape as e
+
+    def linha(x):
+        valor = "não informado" if x.get("valor") is None else "R$ " + f"{x['valor']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        prazo = x.get("encerramento") or ""
+        prazo = f"{prazo[8:10]}/{prazo[5:7]}/{prazo[0:4]} às {prazo[11:16]}" if len(prazo) >= 16 else "não informado"
+        link = SITE + "/licitacao?id=" + urllib.parse.quote(x["id"], safe="")
+        return (f'<tr><td style="padding:12px 14px;border-bottom:1px solid #e3e8f0">'
+                f'<div style="font-size:12px;color:#5a6b80">{e(x["modalidadeNome"])} {e(x["numero"])} · UASG {e(x["uasg"])} · {e(x["portal"])} · {e(", ".join(x.get("categorias", [])))}'
+                + (' · <b style="color:#b3261e">🔧 Exige assistência técnica</b>' if x.get("assistencia") else "") + '</div>'
+                f'<div style="font-weight:700;color:#0c326f;margin:2px 0">{e(x["orgao"])}</div>'
+                f'<div style="color:#14202e">{e(x["objeto"][:280])}</div>'
+                f'<div style="font-size:13px;margin-top:4px"><b>{valor}</b> · propostas até <b style="color:#b3261e">{prazo}</b> · '
+                f'<a href="{link}" style="color:#1351b4">Abrir</a></div></td></tr>')
+
+    def bloco(titulo, lista, vazio):
+        corpo = "".join(linha(x) for x in lista[:60]) or f'<tr><td style="padding:12px 14px;color:#5a6b80">{vazio}</td></tr>'
+        extra = f'<tr><td style="padding:10px 14px;color:#5a6b80">… e mais {len(lista) - 60}. Veja todas no site.</td></tr>' if len(lista) > 60 else ""
+        return (f'<h2 style="font-size:16px;margin:22px 0 8px;color:#0c326f">{titulo} ({len(lista)})</h2>'
+                f'<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e3e8f0;border-radius:8px">{corpo}{extra}</table>')
+
+    filtro = f'{", ".join(portais) or "todos os portais"} · {", ".join(ufs)}' + (f' · palavras: {", ".join(palavras)}' if palavras else "")
+    return (f'<div style="font-family:Arial,sans-serif;background:#f3f5f9;padding:20px;color:#14202e">'
+            f'<div style="max-width:720px;margin:auto">'
+            f'<h1 style="font-size:20px;margin:0;color:#0c326f">Busca Licitações · resumo do dia</h1>'
+            f'<div style="color:#5a6b80;font-size:13px">{e(filtro)}</div>'
+            + bloco("🆕 Novas nas últimas 24 horas", novas, "Nenhuma licitação nova hoje.")
+            + bloco("⚠ Encerram nos próximos 2 dias", urgentes, "Nenhuma encerrando nos próximos 2 dias.")
+            + f'<p style="font-size:12px;color:#5a6b80;margin-top:18px">Abra o site para ver todas: <a href="{SITE}" style="color:#1351b4">{SITE}</a>. '
+              f'Dados do PNCP. Confira sempre o edital no portal antes de participar.</p></div></div>')
+
+
+def montar_resumo():
+    ufs = _lista_env("ALERTA_UF", "DF")
+    portais = _lista_env("ALERTA_PORTAIS", "Compras.gov.br")
+    palavras = [sem_acento(p) for p in _lista_env("ALERTA_PALAVRAS")]
+    itens = []
+    for uf in ufs:
+        itens += buscar(uf, list(MODALIDADES_PADRAO))["itens"]
+    agora = time.time()
+    ontem = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora - 86400))
+    daqui2 = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora + 2 * 86400))
+    agora_s = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora))
+
+    cats = _lista_env("ALERTA_CATEGORIAS")
+    so_produto = os.environ.get("ALERTA_TIPO", "produto").lower().startswith("prod")
+
+    def passa(x):
+        if so_produto and x.get("tipo") == "Serviço":
+            return False
+        if portais and x["portal"] not in portais:
+            return False
+        if cats and not any(c in cats for c in x.get("categorias", [])):
+            return False
+        texto = sem_acento(x["objeto"] + " " + x["orgao"] + " " + x["unidade"])
+        return not palavras or any(p in texto for p in palavras)
+
+    sel = [x for x in itens if passa(x)]
+    novas = sorted([x for x in sel if (x.get("publicacao") or "") >= ontem], key=lambda x: x.get("encerramento") or "9")
+    urgentes = sorted([x for x in sel if agora_s <= (x.get("encerramento") or "") <= daqui2], key=lambda x: x.get("encerramento") or "9")
+    return novas, urgentes, ufs, portais, _lista_env("ALERTA_PALAVRAS")
+
+
+def enviar_email(assunto, html):
+    chave = os.environ.get("RESEND_API_KEY", "")
+    para = os.environ.get("ALERTA_EMAIL", "")
+    if not chave or not para:
+        raise RuntimeError("Faltam RESEND_API_KEY ou ALERTA_EMAIL nas configurações do Render.")
+    corpo = json.dumps({"from": "Busca Licitações <onboarding@resend.dev>", "to": [para],
+                        "subject": assunto, "html": html}).encode("utf-8")
+    req = urllib.request.Request("https://api.resend.com/emails", data=corpo, method="POST",
+                                 headers={"Authorization": "Bearer " + chave, "Content-Type": "application/json",
+                                          "User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.status
+
+
+def tarefa_email():
+    _envio["rodando"] = True
+    try:
+        novas, urgentes, ufs, portais, palavras = montar_resumo()
+        assunto = f"Busca Licitações: {len(novas)} nova{'s' if len(novas) != 1 else ''} · {len(urgentes)} encerrando em 2 dias ({', '.join(ufs)})"
+        enviar_email(assunto, _html_email(novas, urgentes, ufs, portais, palavras))
+        _envio["ultimo"] = time.strftime("%d/%m/%Y %H:%M") + f" · enviado ({len(novas)} novas, {len(urgentes)} urgentes)"
+    except Exception as e:
+        _envio["ultimo"] = time.strftime("%d/%m/%Y %H:%M") + " · ERRO: " + erro_txt(e)
+    finally:
+        _envio["rodando"] = False
+
+
 PAGINA = r"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -549,6 +745,8 @@ aside summary::-webkit-details-marker{display:none}
 .tag.prazo.urg{color:var(--bad);border-color:#7a2f2f;background:var(--bad-bg)}
 .tag.portal{color:var(--muted)}
 .tag.portal.meu{color:var(--gold);border-color:#7a5a12;background:var(--gold-soft)}
+.tag.cat{color:#a8e3c8;border-color:#285a45;background:#11291f}
+.tag.assist{color:#ffb4a8;border-color:#7a2f2f;background:var(--bad-bg);font-weight:700}
 .selo-cg{display:inline-flex;align-items:center;gap:6px;font:800 12px var(--font);padding:3px 10px 3px 4px;border-radius:7px;background:#1351b4;color:#fff;border:1px solid #2a6bd1;white-space:nowrap;letter-spacing:.01em}
 .selo-cg i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:#ffcd07;color:#0c326f;font-style:normal}
 .selo-cg i svg{display:block}
@@ -660,8 +858,18 @@ footer{font-size:12px;color:var(--dim)}
 
   <div class="grade">
     <aside id="filtros">
+      <details open><summary>Tipo</summary>
+        <div class="data-box"><div class="modo" id="f-tipo">
+          <button type="button" data-t="Produto" aria-pressed="true">Só produtos</button>
+          <button type="button" data-t="" aria-pressed="false">Tudo</button>
+          <button type="button" data-t="Serviço" aria-pressed="false">Só serviços</button>
+        </div></div>
+      </details>
       <details open><summary>Portal</summary>
         <div id="f-portal"></div>
+      </details>
+      <details open><summary>Categoria</summary>
+        <div id="f-cat"></div>
       </details>
       <details open><summary>Data da disputa</summary>
         <div class="data-box">
@@ -711,8 +919,11 @@ const MODS = [[6,"Pregão Eletrônico"],[8,"Dispensa"],[4,"Concorrência Eletrô
 const PRAZOS = [["", "Qualquer prazo"], ["2", "Encerra em até 2 dias"], ["7", "Encerra em até 7 dias"], ["30", "Encerra em até 30 dias"]];
 
 let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "", DIA = "", MODO_DIA = "no";
-let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12] };
+let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto" };
 try { Object.assign(PREF, JSON.parse(localStorage.getItem("busca_pref") || "{}")); } catch (e) {}
+if (!Array.isArray(PREF.cats)) PREF.cats = [];
+if (typeof PREF.tipo !== "string") PREF.tipo = "Produto";
+PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e manutenção");
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
 
 $("#uf").innerHTML = UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
@@ -727,9 +938,14 @@ function diasAte(s) {
 }
 function textoPrazo(dias) {
   if (dias == null) return "";
-  if (dias < 1) return "Encerra hoje";
-  const n = Math.ceil(dias);
-  return n === 1 ? "Falta 1 dia" : `Faltam ${n} dias`;
+  // conta pelos dias do calendário: encerra amanhã às 03h é "amanhã", não "hoje"
+  const fim = new Date(Date.now() + dias * 86400000), hoje = new Date();
+  const d0 = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const d1 = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate());
+  const n = Math.round((d1 - d0) / 86400000);
+  if (n <= 0) return "Encerra hoje";
+  if (n === 1) return "Encerra amanhã";
+  return `Faltam ${n} dias`;
 }
 function dataHora(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s || "");
@@ -746,6 +962,8 @@ function filtrar() {
   const lim = PRAZO ? parseFloat(PRAZO) : null;
   return DADOS.itens.filter((x) =>
     (!PREF.portais.length || PREF.portais.includes(x.portal)) &&
+    (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo) &&
+    (!PREF.cats.length || (x.categorias || []).some((c) => PREF.cats.includes(c))) &&
     (!q.length || q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p))) &&
     (vmin == null || (x.valor || 0) >= vmin) && (vmax == null || (x.valor != null && x.valor <= vmax)) &&
     (lim == null || (diasAte(x.encerramento) != null && diasAte(x.encerramento) <= lim)) &&
@@ -767,6 +985,15 @@ function desenharPortais() {
     `<div style="display:flex;gap:12px;margin:6px 0 2px"><button type="button" class="mini-bt" data-sel="meus">Só os meus</button><button type="button" class="mini-bt" data-sel="todos">Todos</button></div>` +
     (outros.length ? `<details><summary style="font-size:11px">Outros portais (${outros.length})</summary>${outros.map((p) => linha(p, false)).join("")}</details>` : "");
 }
+function desenharCats() {
+  const c = {};
+  if (DADOS) DADOS.itens.filter((x) => (!PREF.portais.length || PREF.portais.includes(x.portal)) && (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo))
+    .forEach((x) => (x.categorias || []).forEach((k) => { c[k] = (c[k] || 0) + 1; }));
+  const nomes = Object.keys(c).sort((a, b) => (a === "Outros") - (b === "Outros") || c[b] - c[a]);
+  PREF.cats.forEach((k) => { if (!nomes.includes(k)) nomes.push(k); });
+  $("#f-cat").innerHTML = (nomes.length ? nomes.map((k) => `<label class="opc"><input type="checkbox" data-cat="${esc(k)}"${PREF.cats.includes(k) ? " checked" : ""}><span>${k === "Eletrodomésticos" ? "🔧 " : ""}${esc(k)}</span><span class="n">${c[k] || 0}</span></label>`).join("") : `<p class="loc">As categorias aparecem depois da busca.</p>`) +
+    (PREF.cats.length ? `<button type="button" class="mini-bt" data-limpacat="1">Mostrar todas as categorias</button>` : "");
+}
 function desenharMods() {
   const c = DADOS ? contar(DADOS.itens, "modalidade") : {};
   $("#f-mod").innerHTML = MODS.map(([id, nome]) => `<label class="opc"><input type="checkbox" data-mod="${id}"${PREF.mods.includes(id) ? " checked" : ""}><span>${nome}</span><span class="n">${DADOS && PREF.mods.includes(id) ? (c[id] || 0) : ""}</span></label>`).join("");
@@ -784,6 +1011,9 @@ function cartao(x) {
       <span class="tag">📍 ${esc(x.uf)}</span>
       ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
       ${seloPortal(x.portal)}
+      ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
+      ${x.tipo === "Serviço" ? `<span class="tag">Serviço</span>` : ""}
+      ${x.assistencia ? `<span class="tag assist" title="Eletrodoméstico ou objeto que fala em assistência técnica: confira as exigências no edital">🔧 Exige assistência técnica</span>` : ""}
     </div>
     <div class="corpo">
       <h3><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">${esc(x.orgao)}</a></h3>
@@ -879,7 +1109,7 @@ async function abrirDet(id) {
 }
 
 function desenhar() {
-  desenharPortais(); desenharMods();
+  desenharPortais(); desenharCats(); desenharMods();
   if (!DADOS) return;
   const lista = filtrar(), nome = (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
   let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
@@ -937,6 +1167,21 @@ $("#f-portal").addEventListener("change", (e) => {
 $("#f-portal").addEventListener("click", (e) => {
   const s = e.target.dataset.sel; if (!s) return;
   PREF.portais = s === "meus" ? MEUS.slice() : []; salvar(); desenhar();
+});
+document.querySelectorAll("#f-tipo button").forEach((x) => x.setAttribute("aria-pressed", x.dataset.t === PREF.tipo));
+$("#f-tipo").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  PREF.tipo = b.dataset.t; salvar(); MOSTRAR = 40;
+  document.querySelectorAll("#f-tipo button").forEach((x) => x.setAttribute("aria-pressed", x === b)); desenhar();
+});
+$("#f-cat").addEventListener("change", (e) => {
+  const k = e.target.dataset.cat; if (k == null) return;
+  PREF.cats = e.target.checked ? [...new Set(PREF.cats.concat(k))] : PREF.cats.filter((x) => x !== k);
+  salvar(); MOSTRAR = 40; desenhar();
+});
+$("#f-cat").addEventListener("click", (e) => {
+  if (!e.target.dataset.limpacat) return;
+  PREF.cats = []; salvar(); MOSTRAR = 40; desenhar();
 });
 $("#f-mod").addEventListener("change", (e) => {
   const m = +e.target.dataset.mod; if (!m) return;
@@ -996,6 +1241,8 @@ async function paginaLicitacao(id) {
         <span class="tag">📍 ${esc(x.uf)}</span>
         ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
         ${seloPortal(x.portal)}
+        ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
+        ${x.assistencia ? `<span class="tag assist">🔧 Exige assistência técnica</span>` : ""}
       </div>
       <h2>${esc(x.objeto)}</h2>
       <div class="org">${esc(x.orgao)} <small>· ${esc(x.unidade)}${x.municipio ? " · " + esc(x.municipio) + " - " + esc(x.uf) : ""}</small></div>
@@ -1091,6 +1338,17 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 txt = "ERRO: " + erro_txt(e)
             return self._send(200, txt, "text/plain; charset=utf-8")
+        if u.path == "/tarefa/email":
+            q = urllib.parse.parse_qs(u.query)
+            segredo = os.environ.get("ALERTA_CHAVE", "")
+            if not segredo or q.get("chave", [""])[0] != segredo:
+                return self._send(403, "chave errada ou ALERTA_CHAVE não configurada", "text/plain; charset=utf-8")
+            if q.get("ver"):
+                return self._send(200, "último envio: " + (_envio["ultimo"] or "nenhum desde que o site ligou")
+                                  + (" · enviando agora..." if _envio["rodando"] else ""), "text/plain; charset=utf-8")
+            if not _envio["rodando"]:
+                threading.Thread(target=tarefa_email, daemon=True).start()
+            return self._send(200, "ok: o resumo está sendo preparado e chega no e-mail em 1 ou 2 minutos", "text/plain; charset=utf-8")
         if u.path == "/api/nota":
             q = urllib.parse.parse_qs(u.query)
             try:
