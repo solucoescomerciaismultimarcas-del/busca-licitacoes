@@ -111,6 +111,54 @@ def diagnostico():
     return "\n".join(linhas)
 
 
+SEARCH = "https://pncp.gov.br/api/search/"
+
+
+def diagnostico_busca():
+    """Testa os filtros da busca rápida do PNCP e conta os portais escritos entre [colchetes]."""
+    linhas = ["DIAGNOSTICO BUSCA RAPIDA", ""]
+    base = {"tipos_documento": "edital", "status": "recebendo_proposta", "pagina": 1}
+    testes = [
+        ("tam 100", {"tam_pagina": 100, "ordenacao": "-data"}),
+        ("tam 500", {"tam_pagina": 500, "ordenacao": "-data"}),
+        ("uf DF", {"tam_pagina": 5, "ufs": "DF"}),
+        ("uf MG (campo uf)", {"tam_pagina": 5, "uf": "MG"}),
+        ("modalidade 6", {"tam_pagina": 5, "modalidades": "6"}),
+        ("q=cadeira", {"tam_pagina": 5, "q": "cadeira"}),
+        ("q=\"Compras.gov.br\"", {"tam_pagina": 5, "q": "\"Compras.gov.br\""}),
+        ("ordem data_fim", {"tam_pagina": 5, "ordenacao": "data_fim_vigencia"}),
+        ("ordem -valor", {"tam_pagina": 5, "ordenacao": "-valor_global"}),
+        ("ordem relevancia", {"tam_pagina": 5, "ordenacao": "-relevancia"}),
+    ]
+    prefixos = Counter()
+    for nome, extra in testes:
+        q = dict(base, **extra)
+        url = SEARCH + "?" + urllib.parse.urlencode(q)
+        t0 = time.time()
+        try:
+            d = http_get(url, timeout=40) or {}
+            itens = d.get("items") or []
+            amostra = "; ".join(f"{i.get('uf')} {i.get('modalidade_licitacao_id')} fim={str(i.get('data_fim_vigencia'))[:10]} {str(i.get('orgao_nome'))[:25]}" for i in itens[:3])
+            linhas.append(f"{nome}: {time.time() - t0:.1f}s total={d.get('total')} veio={len(itens)} | {amostra}")
+            for i in itens:
+                m = re.match(r"\s*\[([^\]]{2,120})\]", str(i.get("description") or ""))
+                prefixos[m.group(1) if m else "(sem colchetes)"] += 1
+        except Exception as e:
+            linhas.append(f"{nome}: ERRO {erro_txt(e)} ({time.time() - t0:.1f}s)")
+        time.sleep(0.3)
+    linhas.append("")
+    linhas.append("== portais escritos entre [colchetes] na descricao (amostra)")
+    for p_, n in prefixos.most_common(60):
+        linhas.append(f"  {n:4d} | {p_}")
+    for termo in ("sislog", "licitar", "minas gerais", "compras.gov"):
+        try:
+            d = http_get(SEARCH + "?" + urllib.parse.urlencode(dict(base, tam_pagina=3, q=termo)), timeout=40) or {}
+            linhas.append(f"q={termo}: total={d.get('total')} | " + " || ".join(str(i.get("description"))[:90] for i in (d.get("items") or [])))
+        except Exception as e:
+            linhas.append(f"q={termo}: ERRO {erro_txt(e)}")
+    return "\n".join(linhas)
+
+
 PAGINA = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Busca Licitações</title>
 <style>body{margin:0;background:#0d1422;color:#e8eef8;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -141,6 +189,12 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/diagnostico":
             try:
                 txt = diagnostico()
+            except Exception as e:
+                txt = "ERRO: " + erro_txt(e)
+            return self._send(200, txt, "text/plain; charset=utf-8")
+        if u.path == "/diagnostico2":
+            try:
+                txt = diagnostico_busca()
             except Exception as e:
                 txt = "ERRO: " + erro_txt(e)
             return self._send(200, txt, "text/plain; charset=utf-8")
