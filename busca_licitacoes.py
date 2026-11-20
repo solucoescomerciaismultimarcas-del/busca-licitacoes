@@ -1016,6 +1016,113 @@ footer{font-size:12px;color:var(--dim)}
 </div>
 
 <script>
+// ===== Busca direto do navegador no PNCP =====
+// O PNCP recusa a maioria dos pedidos que vêm do Render (muitos sites usam o mesmo endereço de lá).
+// Por isso o próprio navegador da usuária busca no PNCP, com a internet dela. O servidor fica de reserva.
+const CFG = __CONFIG_PNCP__;
+const PNCP_URL = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta";
+function semAc(s) { return String(s || "").normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase(); }
+function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\\/-]/g, "\\$&"); }
+function padraoP(w) { w = w.trim(); const p = escRe(w); return w.length <= 6 ? p + "(?:s|es)?(?![a-z])" : p; }
+const CAT_RE = CFG.categorias.map(([n, ws]) => [n, new RegExp("(?<![a-z])(?:" + ws.map(padraoP).join("|") + ")")]);
+const SERV_RE = new RegExp("(?<![a-z])(?:" + CFG.servico.map(escRe).join("|") + ")(?![a-z])");
+const PROD_RE = new RegExp("(?<![a-z])(?:" + CFG.produto.map(escRe).join("|") + ")");
+const FORTE_RE = /(?<![a-z])(prestacao de servic|servicos? de|mao de obra|obras?|reforma|pavimenta|engenharia|locacao|terceiriza|vigilancia|consultoria|assessoria)/;
+function categoriasDe(t) { t = semAc(t).replaceAll("mao de obra", "mao-de-servico"); const c = CAT_RE.filter(([, rx]) => rx.test(t)).map(([n]) => n); return c.length ? c : ["Outros"]; }
+function tipoDe(t) { t = semAc(t); if (SERV_RE.test(t)) return PROD_RE.test(t) && !FORTE_RE.test(t) ? "Produto" : "Serviço"; return "Produto"; }
+function portalDe(c) {
+  const u = semAc(c.usuarioNome), links = ["linkSistemaOrigem", "linkProcessoEletronico"].map((k) => String(c[k] || "").toLowerCase()).join(" ");
+  for (const [nome, nomes, doms] of CFG.portais) if (nomes.some((n) => u.includes(n)) || doms.some((d) => links.includes(d))) return nome;
+  return String(c.usuarioNome || "Não informado").trim().slice(0, 60);
+}
+function linkCompras(c) {
+  const uasg = String((c.unidadeOrgao || {}).codigoUnidade || "").replace(/\D/g, ""), num = String(c.numeroCompra || "").replace(/\D/g, "");
+  const mod = {6: "05", 8: "06"}[c.modalidadeId];
+  if (uasg.length !== 6 || !num || !mod || !c.anoCompra) return "";
+  return "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/compras/acompanhamento-compra?compra=" + uasg + mod + String(parseInt(num, 10)).padStart(5, "0") + c.anoCompra;
+}
+function resumirP(c) {
+  const org = c.orgaoEntidade || {}, und = c.unidadeOrgao || {}, controle = String(c.numeroControlePNCP || "");
+  const m = controle.match(/^(\d{14})-\d+-(\d+)\/(\d{4})$/), portal = portalDe(c), obj = String(c.objetoCompra || "");
+  let origem = c.linkSistemaOrigem || ""; if (origem && !String(origem).startsWith("http")) origem = "https://" + origem;
+  const cats = categoriasDe(obj), sa = semAc(obj + " " + String(c.informacaoComplementar || ""));
+  return {
+    id: controle, numero: `${c.numeroCompra || ""}/${c.anoCompra || ""}`.replace(/^\/+|\/+$/g, ""),
+    modalidade: c.modalidadeId, modalidadeNome: c.modalidadeNome || CFG.modalidades[c.modalidadeId] || "",
+    disputa: c.modoDisputaNome || "", srp: !!c.srp, orgao: org.razaoSocial || "", cnpj: String(org.cnpj || "").replace(/\D/g, ""),
+    unidade: und.nomeUnidade || "", uasg: String(und.codigoUnidade || ""), municipio: und.municipioNome || "", uf: und.ufSigla || "",
+    objeto: obj.replace(/\s+/g, " ").trim(), valor: c.valorTotalEstimado ?? null,
+    abertura: String(c.dataAberturaProposta || "").slice(0, 16), encerramento: String(c.dataEncerramentoProposta || "").slice(0, 16),
+    publicacao: String(c.dataPublicacaoPncp || "").slice(0, 16), portal, categorias: cats, tipo: tipoDe(obj),
+    assistencia: cats.includes("Eletrodomésticos") || CFG.assistencia.some((x) => sa.includes(x)),
+    processo: String(c.processo || ""), amparo: (c.amparoLegal || {}).nome || "",
+    esfera: {F: "Federal", E: "Estadual", M: "Municipal", D: "Distrital"}[org.esferaId] || "",
+    poder: {E: "Executivo", L: "Legislativo", J: "Judiciário", N: "Não se aplica"}[org.poderId] || "",
+    situacao: c.situacaoCompraNome || "",
+    linkPncp: m ? `https://pncp.gov.br/app/editais/${m[1]}/${m[3]}/${parseInt(m[2], 10)}` : "",
+    linkPortal: origem || (portal === "Compras.gov.br" ? linkCompras(c) : ""),
+  };
+}
+// no máximo 4 pedidos ao mesmo tempo, para o PNCP não recusar
+let VAGAS = 4; const ESPERA = [];
+async function vaga() { if (VAGAS > 0) { VAGAS--; return; } await new Promise((ok) => ESPERA.push(ok)); }
+function soltaVaga() { const prox = ESPERA.shift(); if (prox) prox(); else VAGAS++; }
+const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
+function doisd(n) { return String(n).padStart(2, "0"); }
+async function paginaP(uf, mod, pg) {
+  const fim = new Date(); fim.setDate(fim.getDate() + 120);
+  const url = `${PNCP_URL}?dataFinal=${fim.getFullYear()}${doisd(fim.getMonth() + 1)}${doisd(fim.getDate())}&codigoModalidadeContratacao=${mod}&uf=${uf}&pagina=${pg}&tamanhoPagina=50`;
+  for (let t = 1; t <= 5; t++) {
+    let r;
+    await vaga();
+    try { r = await fetch(url, {headers: {Accept: "application/json"}}); }
+    catch (e) { soltaVaga(); if (t === 5) throw new Error("sem conexão com o PNCP"); await dormir(2000 * t); continue; }
+    try {
+      if (r.status === 204) return {};
+      if (r.ok) { const txt = await r.text(); return txt.trim() ? JSON.parse(txt) : {}; }
+    } finally { soltaVaga(); }
+    if ((r.status < 500 && r.status !== 429) || t === 5) throw new Error("PNCP respondeu " + r.status);
+    await dormir((r.status === 429 ? 5000 : 2000) * t);
+  }
+  return {};
+}
+const CACHE_P = {};
+async function modalidadeP(uf, mod) {
+  const k = uf + "|" + mod;
+  if (CACHE_P[k] && Date.now() - CACHE_P[k].quando < 2 * 3600 * 1000) return CACHE_P[k].res;
+  const p1 = await paginaP(uf, mod, 1);
+  let itens = (p1.data || []).slice();
+  const tot = p1.totalPaginas || 1, pags = Math.min(30, tot), outras = [];
+  for (let pg = 2; pg <= pags; pg++) outras.push(paginaP(uf, mod, pg));
+  for (const r of await Promise.all(outras)) itens = itens.concat(r.data || []);
+  const d = new Date(), agora = `${d.getFullYear()}-${doisd(d.getMonth() + 1)}-${doisd(d.getDate())}T${doisd(d.getHours())}:${doisd(d.getMinutes())}`;
+  const lista = itens.map(resumirP).filter((x) => !(x.encerramento && x.encerramento < agora));
+  const res = {itens: lista, cortado: tot > 30};
+  CACHE_P[k] = {quando: Date.now(), res};
+  return res;
+}
+async function buscarEstadoDireto(uf, mods) {
+  const itens = [], erros = [], cortadas = [], vistos = new Set();
+  const rs = await Promise.allSettled(mods.map((m) => modalidadeP(uf, m)));
+  rs.forEach((r, i) => {
+    const nome = CFG.modalidades[mods[i]] || mods[i];
+    if (r.status === "rejected") { erros.push(nome + ": " + r.reason.message); return; }
+    r.value.itens.forEach((x) => { if (!vistos.has(x.id)) { vistos.add(x.id); itens.push(x); } });
+    if (r.value.cortado) cortadas.push(nome);
+  });
+  const d = new Date();
+  return {uf, itens, erros, cortadas, atualizado: `${doisd(d.getDate())}/${doisd(d.getMonth() + 1)}/${d.getFullYear()} ${doisd(d.getHours())}:${doisd(d.getMinutes())}`};
+}
+// tenta direto; se o navegador não conseguir falar com o PNCP, usa o servidor como antes
+async function buscarEstado(uf, mods) {
+  try {
+    const d = await buscarEstadoDireto(uf, mods);
+    if (d.itens.length || !d.erros.some((e) => e.includes("sem conexão"))) return d;
+  } catch (e) {}
+  const r = await fetch(`/api/busca?uf=${uf}&mods=${mods.join(",")}`), d = await r.json();
+  if (!r.ok) throw new Error(d.erro || "Falha na busca.");
+  return d;
+}
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const brl = (v) => v == null ? "não informado" : Number(v) === 0 ? "Sigiloso" : "R$ " + Number(v).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1257,8 +1364,7 @@ async function buscarBrasil(meu) {
   let ultimoDesenho = 0;
   async function umEstado(uf) {
     try {
-      const r = await fetch(`/api/busca?uf=${uf}&mods=${PREF.mods.join(",")}`), d = await r.json();
-      if (!r.ok) throw new Error(d.erro || "falhou");
+      const d = await buscarEstado(uf, PREF.mods);
       if (meu !== pedido) return true;
       d.itens.forEach((x) => { if (!vistos.has(x.id)) { vistos.add(x.id); DADOS.itens.push(x); } });
       d.cortadas.forEach((c) => { if (!DADOS.cortadas.includes(uf + " " + c)) DADOS.cortadas.push(uf + " " + c); });
@@ -1283,7 +1389,7 @@ async function buscarBrasil(meu) {
     await Promise.all(Array.from({length: nos}, trabalhador));
     return falhas;
   }
-  let falhas = await rodada(UFS.map((u) => u[0]), 2, false);  // 2 estados por vez, para o PNCP não cortar
+  let falhas = await rodada(UFS.map((u) => u[0]), 3, false);  // 3 estados por vez (no máximo 4 pedidos ao PNCP ao mesmo tempo)
   for (let t = 0; t < 2 && falhas.length && meu === pedido; t++) {
     await new Promise((ok) => setTimeout(ok, 4000));  // respira e tenta de novo, um por vez
     falhas = await rodada(falhas, 1, t === 1);
@@ -1295,18 +1401,16 @@ async function buscar() {
   const uf = $("#uf").value, meu = ++pedido;
   if (uf === "BR") {
     PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
-    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas em todo o Brasil, estado por estado. A primeira vez leva uns 10 minutos (o PNCP é lento); as licitações vão aparecendo enquanto isso.</div>`;
+    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas em todo o Brasil, estado por estado. Leva alguns minutos; as licitações vão aparecendo enquanto isso.</div>`;
     try { await buscarBrasil(meu); } finally { if (meu === pedido) $("#bt").disabled = false; }
     return;
   }
   PREF.uf = uf; salvar(); MOSTRAR = 40;
   $("#bt").disabled = true;
-  $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. A primeira busca de cada estado leva de 20 a 40 segundos; depois fica guardada por 2 horas.</div>`;
+  $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. Leva alguns segundos.</div>`;
   try {
-    const r = await fetch(`/api/busca?uf=${uf}&mods=${PREF.mods.join(",")}`);
-    const d = await r.json();
+    const d = await buscarEstado(uf, PREF.mods);
     if (meu !== pedido) return;
-    if (!r.ok) throw new Error(d.erro || "Falha na busca.");
     DADOS = d; desenhar();
   } catch (e) {
     if (meu === pedido) $("#res").innerHTML = `<div class="erro"><b>Não deu para buscar.</b> ${esc(e.message)}</div>`;
@@ -1494,6 +1598,10 @@ buscar();
 </body>
 </html>
 """
+PAGINA = PAGINA.replace("__CONFIG_PNCP__", json.dumps({
+    "categorias": CATEGORIAS, "servico": SERVICO, "produto": PRODUTO, "assistencia": ASSISTENCIA,
+    "portais": [[n, list(a), list(b)] for n, a, b in PORTAIS_CONHECIDOS], "modalidades": MODALIDADES,
+}, ensure_ascii=False))
 
 
 class Handler(BaseHTTPRequestHandler):
