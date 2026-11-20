@@ -966,7 +966,7 @@ footer{font-size:12px;color:var(--dim)}
   <form class="busca" id="f" autocomplete="off">
     <label class="q"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" placeholder="O que sua empresa vende? Ex.: material de escritório" aria-label="Palavra-chave"></label>
-    <select id="uf" aria-label="Estado" hidden></select>
+    <select id="uf" aria-label="Estado"></select>
     <button id="bt" type="submit">Buscar</button>
   </form>
 
@@ -1149,18 +1149,25 @@ const MODS = [[6,"Pregão Eletrônico"],[8,"Dispensa"],[4,"Concorrência Eletrô
 const PRAZOS = [["", "Qualquer prazo"], ["2", "Encerra em até 2 dias"], ["7", "Encerra em até 7 dias"], ["30", "Encerra em até 30 dias"]];
 
 let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "", DIA = "", MODO_DIA = "no";
-let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto", ufs: ["DF", "SP", "GO"] };
+let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto", ufs: [] };
 try { Object.assign(PREF, JSON.parse(localStorage.getItem("busca_pref") || "{}")); } catch (e) {}
 if (!Array.isArray(PREF.cats)) PREF.cats = [];
-if (!Array.isArray(PREF.ufs) || !PREF.ufs.length) PREF.ufs = ["DF", "SP", "GO"];
+if (!Array.isArray(PREF.ufs) || !PREF.ufsEscolhidos) PREF.ufs = [];  // começa sem estado: ela mesma escolhe
 if (typeof PREF.tipo !== "string") PREF.tipo = "Produto";
 PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e manutenção");
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
 
-function nomeMeus() { return `MEUS ESTADOS (${PREF.ufs.join(", ")})`; }
+function nomeMeus() { return PREF.ufs.length ? `${PREF.ufs.join(", ")}` : "Escolha o estado"; }
+// a lista de cima e os botões da esquerda mostram a mesma escolha
+function sincronizarLista() {
+  const sel = $("#uf"), op = sel.options[0];
+  op.textContent = nomeMeus();
+  op.hidden = PREF.ufs.length === 1 || PREF.ufs.length === UFS.length;
+  sel.value = PREF.ufs.length === UFS.length ? "BR" : PREF.ufs.length === 1 ? PREF.ufs[0] : "MEUS";
+}
 $("#uf").innerHTML = `<option value="MEUS">${nomeMeus()}</option><option value="BR">BRASIL — todos os estados</option>` + UFS.map(([s, n]) => `<option value="${s}">${s} — ${n}</option>`).join("");
 PREF.uf = "MEUS";
-$("#uf").value = "MEUS";
+sincronizarLista();
 $("#f-prazo").innerHTML = PRAZOS.map(([v, t], i) => `<label class="opc"><input type="radio" name="prazo" value="${v}"${i === 0 ? " checked" : ""}><span>${t}</span></label>`).join("");
 
 function diasAte(s) {
@@ -1231,6 +1238,7 @@ function desenharCats() {
 }
 let UFSEL = [];
 function desenharUfs() {
+  sincronizarLista();
   const c = {}, st = (DADOS && DADOS.status) || {};
   if (DADOS) DADOS.itens.filter((x) => (!PREF.portais.length || PREF.portais.includes(x.portal)) && (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo))
     .forEach((x) => { c[x.uf] = (c[x.uf] || 0) + 1; });
@@ -1244,7 +1252,7 @@ function desenharUfs() {
       const dica = n + (sel ? (s === "ok" ? `: ${c[u] || 0} licitações` : s === "erro" ? ": o PNCP não respondeu" : ": carregando...") : "");
       return `<button type="button" class="ufc${cls}" data-uf="${u}" aria-pressed="${sel}" title="${esc(dica)}">${u}</button>`;
     }).join("") + `</div>` +
-    `<div class="uf-info">${falhos.length ? `<b style="color:var(--bad)">${falhos.join(", ")}: o PNCP não respondeu.</b> Clique em Buscar para tentar de novo.` : "Clique para escolher um ou mais estados. Fica guardado para a próxima vez."}</div>`;
+    `<div class="uf-info">${falhos.length ? `<b style="color:var(--bad)">${falhos.join(", ")}: o PNCP não respondeu.</b> Clique em Buscar para tentar de novo.` : (PREF.ufs.length ? "Clique para escolher ou tirar estados." : "Clique para escolher um ou mais estados.")}</div>`;
 }
 function desenharMods() {
   const c = DADOS ? contar(DADOS.itens, "modalidade") : {};
@@ -1370,6 +1378,7 @@ function desenhar() {
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
+  if (DADOS.uf === "MEUS" && !PREF.ufs.length) { $("#res").innerHTML = `<div class="vazio"><b>Escolha os estados</b>Clique em um ou mais estados na caixa <b>Estado</b>, à esquerda (ou em <b>Brasil</b> para todos).</div>`; return; }
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
   h += lista.slice(0, MOSTRAR).map(cartao).join("");
   if (lista.length > MOSTRAR) h += `<button type="button" class="mais" id="mais">Mostrar mais (${(lista.length - MOSTRAR).toLocaleString("pt-BR")} restantes)</button>`;
@@ -1426,7 +1435,7 @@ async function buscarVarios(meu, lista, novo, modo) {
   desenhar();
 }
 async function buscar() {
-  const uf = $("#uf").value, meu = ++pedido;
+  const uf = "MEUS", meu = ++pedido;
   if (uf === "BR" || uf === "MEUS") {
     PREF.uf = uf; salvar(); MOSTRAR = 40; $("#bt").disabled = true;
     try { await buscarVarios(meu, uf === "BR" ? UFS.map((u) => u[0]) : PREF.ufs.slice(), true, uf); } finally { if (meu === pedido) $("#bt").disabled = false; }
@@ -1446,7 +1455,7 @@ async function buscar() {
 
 $("#f").addEventListener("submit", (e) => {
   e.preventDefault();
-  if (!DADOS || DADOS.uf !== $("#uf").value) return buscar();
+  if (!DADOS || DADOS.uf !== "MEUS") return buscar();
   // Brasil / meus estados: "Buscar" de novo tenta só os estados que falharam
   if ((DADOS.uf === "BR" || DADOS.uf === "MEUS") && !DADOS.progresso && DADOS.erros.length) {
     const falhos = DADOS.erros.filter((u) => /^[A-Z]{2}$/.test(u));
@@ -1454,7 +1463,13 @@ $("#f").addEventListener("submit", (e) => {
   }
   MOSTRAR = 40; desenhar();
 });
-$("#uf").addEventListener("change", buscar);
+$("#uf").addEventListener("change", () => {
+  const v = $("#uf").value, antes = PREF.ufs.slice();
+  if (v === "MEUS") return sincronizarLista();
+  if (v === "BR") { if (PREF.ufs.length < UFS.length) PREF.ufsAntes = PREF.ufs.slice(); PREF.ufs = UFS.map((x) => x[0]); }
+  else PREF.ufs = [v];
+  aplicarUfs(antes);
+});
 $("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
 function hojeMais(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
@@ -1477,19 +1492,22 @@ $("#f-ufs").addEventListener("click", (e) => {
   const bt = e.target.closest("button[data-uf]"); if (!bt) return;
   const u = bt.dataset.uf, antes = PREF.ufs.slice();
   if (u === "BR") {
-    if (PREF.ufs.length === UFS.length) PREF.ufs = (PREF.ufsAntes && PREF.ufsAntes.length && PREF.ufsAntes.length < UFS.length) ? PREF.ufsAntes : ["DF"];
+    if (PREF.ufs.length === UFS.length) PREF.ufs = (PREF.ufsAntes && PREF.ufsAntes.length < UFS.length) ? PREF.ufsAntes : [];
     else { PREF.ufsAntes = PREF.ufs.slice(); PREF.ufs = UFS.map((x) => x[0]); }
   } else if (PREF.ufs.includes(u)) {
-    if (PREF.ufs.length === 1) return;  // pelo menos um estado
     PREF.ufs = PREF.ufs.filter((x) => x !== u);
   } else {
     PREF.ufs = UFS.map((x) => x[0]).filter((x) => x === u || PREF.ufs.includes(x));
   }
-  salvar(); $("#uf").options[0].textContent = nomeMeus(); MOSTRAR = 40;
+  aplicarUfs(antes);
+});
+function aplicarUfs(antes) {
+  PREF.ufsEscolhidos = true;
+  salvar(); sincronizarLista(); MOSTRAR = 40;
   if (!DADOS || DADOS.uf !== "MEUS") return buscar();
   const novos = PREF.ufs.filter((x) => !antes.includes(x) && DADOS.status[x] !== "ok" && !(DADOS.progresso && DADOS.carregando && DADOS.carregando.has(x)));
   if (novos.length) buscarVarios(pedido, novos, false); else desenhar();
-});
+}
 $("#f-portal").addEventListener("change", (e) => {
   const p = e.target.dataset.portal; if (p == null) return;
   PREF.portais = e.target.checked ? [...new Set(PREF.portais.concat(p))] : PREF.portais.filter((x) => x !== p);
@@ -1637,7 +1655,7 @@ if (location.pathname === "/licitacao" && qs.get("id")) {
   paginaLicitacao(qs.get("id"));
 } else {
 desenhar();
-if (qs.get("uf") && UFS.some((u) => u[0] === qs.get("uf").toUpperCase())) PREF.ufs = [qs.get("uf").toUpperCase()];
+if (qs.get("uf") && UFS.some((u) => u[0] === qs.get("uf").toUpperCase())) { PREF.ufs = [qs.get("uf").toUpperCase()]; PREF.ufsEscolhidos = true; }
 if (qs.get("q")) $("#q").value = qs.get("q");
 buscar();
 }
