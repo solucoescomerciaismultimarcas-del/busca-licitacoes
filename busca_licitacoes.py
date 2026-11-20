@@ -241,6 +241,12 @@ def resumir(c, portal):
         "encerramento": str(c.get("dataEncerramentoProposta") or "")[:16],
         "publicacao": str(c.get("dataPublicacaoPncp") or "")[:16],
         "portal": portal,
+        "complemento": re.sub(r"\s+", " ", str(c.get("informacaoComplementar") or "")).strip()[:1500],
+        "processo": str(c.get("processo") or ""),
+        "amparo": (c.get("amparoLegal") or {}).get("nome") or "",
+        "esfera": {"F": "Federal", "E": "Estadual", "M": "Municipal", "D": "Distrital"}.get(org.get("esferaId"), ""),
+        "poder": {"E": "Executivo", "L": "Legislativo", "J": "Judiciário", "N": "Não se aplica"}.get(org.get("poderId"), ""),
+        "situacao": c.get("situacaoCompraNome") or "",
         "linkPncp": pncp,
         "linkPortal": origem or (link_comprasgov(c) if portal == "Compras.gov.br" else ""),
     }
@@ -357,6 +363,26 @@ def detalhes(id_pncp):
     if not erros:
         with _lock:
             _cache[chave] = (time.time(), res)
+    return res
+
+
+def licitacao(id_pncp):
+    """Dados completos de uma licitação (para a página de detalhes)."""
+    m = re.match(r"^(\d{14})-\d+-(\d+)/(\d{4})$", id_pncp or "")
+    if not m:
+        raise ValueError("Licitação inválida.")
+    cnpj, seq, ano = m.group(1), int(m.group(2)), m.group(3)
+    chave = f"lic|{id_pncp}"
+    with _lock:
+        if chave in _cache and time.time() - _cache[chave][0] < 1800:
+            return _cache[chave][1]
+    c = _get_tentando(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}")
+    if not c:
+        raise ValueError("Não encontrei essa licitação no PNCP.")
+    res = resumir(c, portal_de(c))
+    res["id"] = res["id"] or id_pncp
+    with _lock:
+        _cache[chave] = (time.time(), res)
     return res
 
 
@@ -491,6 +517,16 @@ aside summary::-webkit-details-marker{display:none}
 .doc svg{flex:none;color:var(--gold)}
 .doc span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .doc small{margin-left:auto;color:var(--dim);font-size:12px;white-space:nowrap}
+.dados{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px 18px;background:var(--surf2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.dados div{min-width:0}
+.dados span{display:block;font:700 10.5px var(--font);letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+.dados b{font-weight:600;font-size:13.5px;overflow-wrap:anywhere}
+.dados b.m{font-family:var(--mono);font-size:12.5px}
+.txt{margin:0;color:var(--ink);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.tipo{font:600 11px var(--font);padding:1px 7px;border-radius:6px;background:var(--surf2);border:1px solid var(--line2);color:var(--muted);margin-left:6px;white-space:nowrap}
+.bts{display:flex;gap:8px;flex-wrap:wrap}
+.bts button{font:600 13px var(--font);padding:6px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--ink);background:transparent;cursor:pointer}
+.bts button:hover{border-color:var(--accent)}
 .tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .tw table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
 .tw th,.tw td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}
@@ -499,6 +535,23 @@ aside summary::-webkit-details-marker{display:none}
 .tw td.d small{display:block;color:var(--dim)}
 .tw tr:last-child td{border-bottom:0}
 .tw tfoot td{font-weight:700;background:var(--surf2)}
+.corpo h3 a,.obj a{color:inherit;text-decoration:none}
+.corpo h3 a:hover,.obj a:hover{color:var(--accent);text-decoration:underline}
+.pg{display:grid;gap:18px;min-width:0}
+.voltar{color:var(--accent);text-decoration:none;font-weight:600;font-size:14px}
+.pg h2{margin:6px 0 4px;font-size:clamp(19px,2.6vw,26px);font-weight:800;line-height:1.3;text-transform:uppercase;overflow-wrap:anywhere}
+.pg .org{color:var(--accent);font-weight:700}
+.pg .org small{color:var(--muted);font-weight:500}
+.quad{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surf)}
+.quad div{padding:14px 16px;border-right:1px solid var(--line);min-width:0}
+.quad div:first-child{background:var(--surf2)}
+.quad span{display:block;font:700 10.5px var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.quad b{font:600 16px var(--mono);font-variant-numeric:tabular-nums}
+.quad .urg{color:var(--bad)}
+.quad small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.pg .acoes{border-top:0;padding-top:0}
+.secao{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:grid;gap:12px;min-width:0}
+.secao>h3{margin:0;font-size:17px;font-weight:800;border-bottom:1px solid var(--line);padding-bottom:8px}
 .mais{justify-self:center;font:700 14px var(--font);padding:10px 22px;border-radius:999px;border:1px solid var(--line2);background:var(--surf);color:var(--ink);cursor:pointer}
 .vazio{background:var(--surf);border:1px dashed var(--line2);border-radius:14px;padding:30px;text-align:center;color:var(--muted)}
 .vazio b{display:block;color:var(--ink);font-size:17px;margin-bottom:6px}
@@ -652,8 +705,8 @@ function cartao(x) {
       <span class="tag portal${meu ? " meu" : ""}">${esc(x.portal)}</span>
     </div>
     <div class="corpo">
-      <h3>${esc(x.orgao)}</h3>
-      <p class="obj" title="Clique para ver o objeto completo">${esc(x.objeto)}</p>
+      <h3><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">${esc(x.orgao)}</a></h3>
+      <p class="obj"><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener" title="Abrir a página da licitação">${esc(x.objeto)}</a></p>
       <div class="loc">${esc([x.municipio, x.uf].filter(Boolean).join(" · "))}${x.unidade ? " · " + esc(x.unidade) : ""}</div>
     </div>
     <div class="lado">
@@ -664,19 +717,34 @@ function cartao(x) {
       ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
       ${x.cnpj ? `<a class="pag" href="${CONSULTA}${esc(x.cnpj)}" target="_blank" rel="noopener">É bom pagador?</a>` : ""}
-      ${x.id ? `<button type="button" data-det="${esc(x.id)}" aria-expanded="${ABERTOS[x.id] ? "true" : "false"}">${ABERTOS[x.id] ? "Fechar documentos e itens" : "📄 Documentos e itens"}</button>` : ""}
+      ${x.id ? `<a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">📄 Detalhes, documentos e itens</a>` : ""}
     </div>
-    ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id])}</div>` : ""}
+    ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id], x)}</div>` : ""}
   </article>`;
 }
 
 const ABERTOS = {}, DET = {};
 const ICDOC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6v18h12V7l-4-4z"/><path d="M14 3v4h4M12 11v6M9 14l3 3 3-3"/></svg>';
 function qtd(v) { return v == null ? "" : Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 4}); }
-function painelDet(d) {
-  if (!d) return `<div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div>`;
+function dataSo(s) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; }
+function cnpjFmt(c) { return c && c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : c || ""; }
+function blocoDados(x) {
+  const campos = [["Órgão", x.orgao], ["CNPJ", cnpjFmt(x.cnpj), 1], ["Unidade", x.unidade], ["Código da unidade (UASG)", x.uasg, 1],
+    ["Local", [x.municipio, x.uf].filter(Boolean).join(" - ")], ["Esfera", x.esfera], ["Poder", x.poder], ["Modalidade", x.modalidadeNome],
+    ["Modo de disputa", x.disputa], ["Amparo legal", x.amparo], ["Processo", x.processo, 1], ["Registro de preços", x.srp ? "Sim" : "Não"],
+    ["Abertura das propostas", dataHora(x.abertura)], ["Propostas até", dataHora(x.encerramento)], ["Publicado no PNCP", dataSo(x.publicacao)],
+    ["Situação", x.situacao], ["Portal", x.portal], ["Nº de controle PNCP", x.id, 1]];
+  return `<div class="bts"><button type="button" data-cal="${esc(x.id)}">📅 Salvar no calendário</button><button type="button" data-copiar="${esc(x.linkPortal || x.linkPncp)}">🔗 Copiar link</button></div>
+    <div><h4>Objeto completo</h4><p class="txt">${esc(x.objeto)}</p></div>
+    ${x.complemento && x.complemento !== x.objeto ? `<div><h4>Informação complementar</h4><p class="txt">${esc(x.complemento)}</p></div>` : ""}
+    <div><h4>Dados da contratação</h4><div class="dados">${campos.filter((c) => c[1]).map(([k, v, m]) => `<div><span>${k}</span><b${m ? ' class="m"' : ""}>${esc(v)}</b></div>`).join("")}</div></div>`;
+}
+function painelDet(d, x) {
+  const dados = x ? blocoDados(x) : "";
+  if (!d) return dados + `<div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div>`;
+  if (d.erro) return dados + `<div class="aviso">${esc(d.erro)}</div>`;
+  let h = dados; `<div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div>`;
   if (d.erro) return `<div class="aviso">${esc(d.erro)}</div>`;
-  let h = "";
   if (d.erros && d.erros.length) h += `<div class="aviso">O PNCP não respondeu para ${esc(d.erros.join("; "))}. Tente de novo em alguns minutos.</div>`;
   h += `<div><h4>Documentos (${d.arquivos.length})</h4>` + (d.arquivos.length
     ? `<div class="docs">${d.arquivos.map((a) => `<a class="doc" href="${esc(a.url)}" target="_blank" rel="noopener">${ICDOC}<span>${esc(a.titulo)}${a.tipo && a.tipo !== a.titulo ? " · " + esc(a.tipo) : ""}</span><small>${esc(a.data.split("-").reverse().join("/"))}</small></a>`).join("")}</div>`
@@ -684,10 +752,29 @@ function painelDet(d) {
   if (d.itens.length) {
     const tot = d.itens.reduce((s, i) => s + (i.vt || 0), 0);
     h += `<div><h4>Itens (${d.itens.length})</h4><div class="tw"><table><thead><tr><th>Item</th><th style="text-align:left">Descrição</th><th>Qtd</th><th>Un.</th><th>Valor unit.</th><th>Total</th></tr></thead><tbody>` +
-      d.itens.map((i) => `<tr><td>${esc(i.n)}</td><td class="d">${esc(i.descricao)}${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${qtd(i.qtd)}</td><td>${esc(i.un)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
+      d.itens.map((i) => `<tr><td>${esc(i.n)}</td><td class="d">${esc(i.descricao)}${i.tipo ? `<span class="tipo">${esc(i.tipo)}</span>` : ""}${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${qtd(i.qtd)}</td><td>${esc(i.un)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
       `</tbody>${tot ? `<tfoot><tr><td colspan="5">Total estimado</td><td>${brl(tot)}</td></tr></tfoot>` : ""}</table></div></div>`;
   }
   return h;
+}
+function salvarCalendario(x) {
+  if (!x || !x.encerramento) return;
+  const ics = (s) => s.replace(/[-:]/g, "").slice(0, 13) + "00";
+  const fim = ics(x.encerramento);
+  const d0 = new Date(new Date(x.encerramento + ":00").getTime() - 3600000), z = (n) => String(n).padStart(2, "0");
+  const ini = `${d0.getFullYear()}${z(d0.getMonth() + 1)}${z(d0.getDate())}T${z(d0.getHours())}${z(d0.getMinutes())}00`;
+  const txt = (s) => String(s || "").replace(/[\\;,]/g, (c) => "\\" + c).replace(/\n/g, " ");
+  const corpo = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Busca Licitacoes//PT", "BEGIN:VEVENT",
+    "UID:" + x.id.replace(/\W/g, "") + "@busca-licitacoes", "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z",
+    "DTSTART:" + ini, "DTEND:" + fim,
+    "SUMMARY:" + txt("Prazo de proposta: " + x.modalidadeNome + " " + x.numero + " - " + x.orgao),
+    "DESCRIPTION:" + txt(x.objeto + " | " + (x.linkPortal || x.linkPncp)),
+    "BEGIN:VALARM", "TRIGGER:-PT2H", "ACTION:DISPLAY", "DESCRIPTION:Prazo de proposta encerra em 2 horas", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([corpo], {type: "text/calendar"}));
+  a.download = "prazo-" + (x.numero || "licitacao").replace(/\W/g, "-") + ".ics";
+  document.body.appendChild(a); a.click(); a.remove();
 }
 async function abrirDet(id) {
   ABERTOS[id] = !ABERTOS[id];
@@ -758,16 +845,118 @@ $("#f-mod").addEventListener("change", (e) => {
 });
 $("#res").addEventListener("click", (e) => {
   if (e.target.id === "mais") { MOSTRAR += 40; desenhar(); return; }
+  const bc = e.target.closest("[data-copiar]");
+  if (bc) {
+    const t = bc.dataset.copiar, ok = () => { bc.textContent = "✔ Link copiado"; setTimeout(() => { bc.textContent = "🔗 Copiar link"; }, 2000); };
+    if (navigator.clipboard) navigator.clipboard.writeText(t).then(ok, () => prompt("Copie o link:", t)); else prompt("Copie o link:", t);
+    return;
+  }
+  const bk = e.target.closest("[data-cal]");
+  if (bk) { salvarCalendario(DADOS.itens.find((i) => i.id === bk.dataset.cal)); return; }
   const bd = e.target.closest("[data-det]");
   if (bd) { abrirDet(bd.dataset.det); return; }
   if (e.target.classList.contains("obj")) e.target.classList.toggle("aberto");
 });
 
-desenhar();
+// ===== página de uma licitação: /licitacao?id=... =====
+function textoEncerra(dias) {
+  if (dias == null) return "";
+  if (dias < 0) return "Prazo encerrado";
+  if (dias < 1 / 24) return "Encerra em minutos";
+  if (dias < 1) return `Encerra em ${Math.ceil(dias * 24)} horas`;
+  return textoPrazo(dias);
+}
+async function paginaLicitacao(id) {
+  document.querySelector("#f").hidden = true;
+  document.querySelector(".grade").hidden = true;
+  const alvo = document.createElement("main");
+  alvo.className = "pg"; alvo.id = "pg";
+  document.querySelector(".grade").after(alvo);
+  alvo.innerHTML = `<a class="voltar" href="/">← Nova busca</a><div class="carregando"><div class="spin"></div>Carregando a licitação no PNCP…</div>`;
+  let x;
+  try {
+    const r = await fetch(`/api/licitacao?id=${encodeURIComponent(id)}`);
+    x = await r.json();
+    if (!r.ok) throw new Error(x.erro || "Falha ao buscar no PNCP.");
+  } catch (e) {
+    alvo.innerHTML = `<a class="voltar" href="/">← Nova busca</a><div class="erro"><b>Não deu para abrir a licitação.</b> ${esc(e.message)}</div>`;
+    return;
+  }
+  DADOS = {itens: [x]};
+  document.title = `${x.modalidadeNome} ${x.numero} · ${x.orgao}`;
+  const dias = diasAte(x.encerramento), meu = MEUS.includes(x.portal);
+  alvo.innerHTML = `<a class="voltar" href="/">← Nova busca</a>
+    <div>
+      <div class="tags">
+        ${x.numero ? `<span class="tag num">${esc(x.numero)}</span>` : ""}
+        <span class="tag mod">${esc(x.modalidadeNome)}</span>
+        ${x.srp ? `<span class="tag srp">Registro de preços</span>` : ""}
+        ${dias != null && dias >= 0 ? `<span class="tag prazo${dias <= 2 ? " urg" : ""}">${textoPrazo(dias)}</span>` : ""}
+        <span class="tag">📍 ${esc(x.uf)}</span>
+        ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
+        <span class="tag portal${meu ? " meu" : ""}">${esc(x.portal)}</span>
+      </div>
+      <h2>${esc(x.objeto)}</h2>
+      <div class="org">${esc(x.orgao)} <small>· ${esc(x.unidade)}${x.municipio ? " · " + esc(x.municipio) + " - " + esc(x.uf) : ""}</small></div>
+    </div>
+    <div class="quad">
+      <div><span>Valor estimado</span><b>${brl(x.valor)}</b></div>
+      <div><span>Propostas até</span><b class="${dias != null && dias <= 2 ? "urg" : ""}">${dataHora(x.encerramento)}</b><small>${esc(textoEncerra(dias))}</small></div>
+      <div><span>Abertura das propostas</span><b>${dataHora(x.abertura)}</b></div>
+      <div><span>Publicado no PNCP</span><b>${dataSo(x.publicacao) || "—"}</b></div>
+    </div>
+    <div class="acoes">
+      ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
+      ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP (oficial)</a>` : ""}
+      ${x.cnpj ? `<a class="pag" href="${CONSULTA}${esc(x.cnpj)}" target="_blank" rel="noopener">É bom pagador?</a>` : ""}
+      <button type="button" data-cal="${esc(x.id)}">📅 Salvar no calendário</button>
+      <button type="button" data-copiar="${esc(location.href)}">🔗 Copiar link</button>
+    </div>
+    <section class="secao" id="sec-docs"><h3>Documentos do edital</h3><div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div></section>
+    <section class="secao" id="sec-itens" hidden></section>
+    <section class="secao"><h3>Objeto completo</h3><p class="txt">${esc(x.objeto)}</p>
+      ${x.complemento && x.complemento !== x.objeto ? `<h3>Informação complementar</h3><p class="txt">${esc(x.complemento)}</p>` : ""}</section>
+    <section class="secao"><h3>Dados da contratação</h3>${blocoDados(x).replace(/^[\s\S]*?<div><h4>Dados da contratação<\/h4>/, "<div>")}</section>`;
+  alvo.addEventListener("click", (e) => {
+    const bc = e.target.closest("[data-copiar]"), bk = e.target.closest("[data-cal]");
+    if (bk) salvarCalendario(x);
+    if (bc) {
+      const t = bc.dataset.copiar, ok = () => { bc.textContent = "✔ Link copiado"; setTimeout(() => { bc.textContent = "🔗 Copiar link"; }, 2000); };
+      if (navigator.clipboard) navigator.clipboard.writeText(t).then(ok, () => prompt("Copie o link:", t)); else prompt("Copie o link:", t);
+    }
+  });
+  let d;
+  try {
+    const r = await fetch(`/api/detalhes?id=${encodeURIComponent(id)}`);
+    d = await r.json();
+    if (!r.ok) throw new Error(d.erro || "Falha ao buscar no PNCP.");
+  } catch (e) {
+    alvo.querySelector("#sec-docs").innerHTML = `<h3>Documentos do edital</h3><div class="aviso">${esc(e.message)} Use o botão "Ver no PNCP (oficial)".</div>`;
+    return;
+  }
+  const docs = d.arquivos.length
+    ? `<div class="docs">${d.arquivos.map((a) => `<a class="doc" href="${esc(a.url)}" target="_blank" rel="noopener">${ICDOC}<span>${esc(a.titulo)}${a.tipo && a.tipo !== a.titulo ? " · " + esc(a.tipo) : ""}</span><small>${esc(dataSo(a.data))}</small></a>`).join("")}</div>`
+    : `<p class="loc">Nenhum documento publicado no PNCP. Veja no portal da licitação.</p>`;
+  alvo.querySelector("#sec-docs").innerHTML = `<h3>Documentos do edital (${d.arquivos.length})</h3>` +
+    (d.erros && d.erros.length ? `<div class="aviso">O PNCP não respondeu para ${esc(d.erros.join("; "))}.</div>` : "") + docs;
+  if (d.itens.length) {
+    const sec = alvo.querySelector("#sec-itens"), tot = d.itens.reduce((s, i) => s + (i.vt || 0), 0);
+    sec.hidden = false;
+    sec.innerHTML = `<h3>Itens da contratação (${d.itens.length})</h3><div class="tw"><table><thead><tr><th>Item</th><th style="text-align:left">Descrição</th><th>Un.</th><th>Qtd</th><th>Valor unit.</th><th>Valor total</th></tr></thead><tbody>` +
+      d.itens.map((i) => `<tr><td>${esc(i.n)}</td><td class="d">${esc(i.descricao)}${i.tipo ? `<span class="tipo">${esc(i.tipo)}</span>` : ""}${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${esc(i.un)}</td><td>${qtd(i.qtd)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
+      `</tbody>${tot ? `<tfoot><tr><td colspan="5">Total estimado dos itens</td><td>${brl(tot)}</td></tr></tfoot>` : ""}</table></div>`;
+  }
+}
+
 const qs = new URLSearchParams(location.search);
+if (location.pathname === "/licitacao" && qs.get("id")) {
+  paginaLicitacao(qs.get("id"));
+} else {
+desenhar();
 if (qs.get("uf")) $("#uf").value = qs.get("uf").toUpperCase();
 if (qs.get("q")) $("#q").value = qs.get("q");
 buscar();
+}
 </script>
 </body>
 </html>
@@ -800,6 +989,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 txt = "ERRO: " + erro_txt(e)
             return self._send(200, txt, "text/plain; charset=utf-8")
+        if u.path == "/api/licitacao":
+            q = urllib.parse.parse_qs(u.query)
+            try:
+                res = licitacao(q.get("id", [""])[0])
+                return self._send(200, json.dumps(res, ensure_ascii=False), "application/json; charset=utf-8")
+            except ValueError as e:
+                return self._send(404, json.dumps({"erro": str(e)}, ensure_ascii=False), "application/json; charset=utf-8")
+            except Exception as e:
+                return self._send(502, json.dumps({"erro": erro_txt(e)}, ensure_ascii=False), "application/json; charset=utf-8")
         if u.path == "/api/detalhes":
             q = urllib.parse.parse_qs(u.query)
             try:
@@ -825,7 +1023,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 txt = "ERRO: " + erro_txt(e)
             return self._send(200, txt, "text/plain; charset=utf-8")
-        if u.path in ("/", "/index.html"):
+        if u.path in ("/", "/index.html", "/licitacao"):
             return self._send(200, PAGINA, "text/html; charset=utf-8")
         self._send(404, "não encontrado", "text/plain; charset=utf-8")
 
