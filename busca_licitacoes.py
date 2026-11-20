@@ -565,7 +565,12 @@ def _html_email(novas, urgentes, ufs, portais, palavras):
     from html import escape as e
 
     def linha(x):
-        valor = "não informado" if x.get("valor") is None else "R$ " + f"{x['valor']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        if x.get("valor") is None:
+            valor = "valor não informado"
+        elif not x["valor"]:
+            valor = "valor sigiloso"
+        else:
+            valor = "R$ " + f"{x['valor']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         prazo = x.get("encerramento") or ""
         prazo = f"{prazo[8:10]}/{prazo[5:7]}/{prazo[0:4]} às {prazo[11:16]}" if len(prazo) >= 16 else "não informado"
         link = SITE + "/licitacao?id=" + urllib.parse.quote(x["id"], safe="")
@@ -910,7 +915,7 @@ footer{font-size:12px;color:var(--dim)}
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const brl = (v) => v == null ? "não informado" : "R$ " + Number(v).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const brl = (v) => v == null ? "não informado" : Number(v) === 0 ? "Sigiloso" : "R$ " + Number(v).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const semAcento = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const CONSULTA = "https://consulta-orgaos.onrender.com/?cnpj=";
 const MEUS = ["Compras.gov.br", "ComprasMG", "SISLOG", "Licitar Digital"];
