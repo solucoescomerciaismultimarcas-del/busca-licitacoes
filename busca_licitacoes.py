@@ -1152,7 +1152,7 @@ let DADOS = null, ORDEM = "encerra", MOSTRAR = 40, PRAZO = "", DIA = "", MODO_DI
 let PREF = { uf: "DF", portais: ["Compras.gov.br"], mods: [6, 8, 4, 7, 5, 12], cats: [], tipo: "Produto", ufs: [] };
 try { Object.assign(PREF, JSON.parse(localStorage.getItem("busca_pref") || "{}")); } catch (e) {}
 if (!Array.isArray(PREF.cats)) PREF.cats = [];
-if (!Array.isArray(PREF.ufs) || !PREF.ufsEscolhidos) PREF.ufs = [];  // começa sem estado: ela mesma escolhe
+PREF.ufs = UFS.map((u) => u[0]);  // abre carregando o Brasil todo; depois ela escolhe os estados
 if (typeof PREF.tipo !== "string") PREF.tipo = "Produto";
 PREF.cats = PREF.cats.filter((k) => k !== "Serviços" && k !== "Construção e manutenção");
 function salvar() { try { localStorage.setItem("busca_pref", JSON.stringify(PREF)); } catch (e) {} }
@@ -1378,7 +1378,7 @@ function desenhar() {
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
-  if (DADOS.uf === "MEUS" && !PREF.ufs.length) { $("#res").innerHTML = `<div class="vazio"><b>Escolha os estados</b>Clique em um ou mais estados na caixa <b>Estado</b>, à esquerda (ou em <b>Brasil</b> para todos).</div>`; return; }
+  if (DADOS.uf === "MEUS" && !PREF.ufs.length) { $("#res").innerHTML = `<div class="vazio"><b>Nenhum estado escolhido</b>Clique nos estados à esquerda ou escolha na lista lá em cima.</div>`; return; }
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
   h += lista.slice(0, MOSTRAR).map(cartao).join("");
   if (lista.length > MOSTRAR) h += `<button type="button" class="mais" id="mais">Mostrar mais (${(lista.length - MOSTRAR).toLocaleString("pt-BR")} restantes)</button>`;
@@ -1494,6 +1494,8 @@ $("#f-ufs").addEventListener("click", (e) => {
   if (u === "BR") {
     if (PREF.ufs.length === UFS.length) PREF.ufs = (PREF.ufsAntes && PREF.ufsAntes.length < UFS.length) ? PREF.ufsAntes : [];
     else { PREF.ufsAntes = PREF.ufs.slice(); PREF.ufs = UFS.map((x) => x[0]); }
+  } else if (PREF.ufs.length === UFS.length) {
+    PREF.ufs = [u];  // com o Brasil todo carregado, clicar num estado mostra só ele
   } else if (PREF.ufs.includes(u)) {
     PREF.ufs = PREF.ufs.filter((x) => x !== u);
   } else {
