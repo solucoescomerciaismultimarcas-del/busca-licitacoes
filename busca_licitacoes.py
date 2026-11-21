@@ -647,7 +647,7 @@ def buscar(uf, modalidades):
 #   ALERTA_PORTAIS  portal(is), separados por vírgula. Padrão: Compras.gov.br
 #   ALERTA_PALAVRAS palavras-chave separadas por vírgula (vazio = todos os assuntos)
 SITE = os.environ.get("SITE_URL", "https://busca-licitacoes-j9vl.onrender.com")
-_envio = {"rodando": False, "ultimo": ""}
+_envio = {"rodando": False, "ultimo": "", "dia": ""}  # "dia": data do último envio que deu certo
 
 
 def _lista_env(nome, padrao=""):
@@ -751,6 +751,7 @@ def tarefa_email():
         assunto = f"Busca Licitações: {len(novas)} nova{'s' if len(novas) != 1 else ''} · {len(urgentes)} encerrando em 2 dias ({', '.join(ufs)})"
         enviar_email(assunto, _html_email(novas, urgentes, ufs, portais, palavras))
         _envio["ultimo"] = time.strftime("%d/%m/%Y %H:%M") + f" · enviado ({len(novas)} novas, {len(urgentes)} urgentes)"
+        _envio["dia"] = time.strftime("%Y-%m-%d")
     except Exception as e:
         _envio["ultimo"] = time.strftime("%d/%m/%Y %H:%M") + " · ERRO: " + erro_txt(e)
     finally:
@@ -865,6 +866,10 @@ aside summary::-webkit-details-marker{display:none}
 .selo-cg i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:#ffcd07;color:#0c326f;font-style:normal}
 .selo-cg i svg{display:block}
 .selo-cg em{font-style:normal;color:#ffcd07}
+.selo-p{display:inline-flex;align-items:center;font:800 12px var(--font);padding:3px 10px;border-radius:7px;color:#fff;white-space:nowrap;letter-spacing:.01em}
+.selo-mg{background:#c8102e;border:1px solid #e23a52}
+.selo-go{background:#13873f;border:1px solid #2aa95a}
+.selo-ld{background:#0e8ec9;border:1px solid #38b1e6}
 .corpo{grid-column:1;min-width:0}
 .corpo h3{margin:4px 0 2px;font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:.01em;overflow-wrap:anywhere}
 .obj{color:var(--muted);font-size:14px;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;overflow-wrap:anywhere}
@@ -1286,6 +1291,8 @@ function cartao(x) {
 const ABERTOS = {}, DET = {};
 function seloPortal(p) {
   if (p === "Compras.gov.br") return `<span class="selo-cg" title="Licitação do Compras.gov.br"><i><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.5 11h11L21 7H6.5"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg></i><span>Compras<em>.gov.br</em></span></span>`;
+  const cor = {"ComprasMG": "selo-mg", "SISLOG": "selo-go", "Licitar Digital": "selo-ld"}[p];
+  if (cor) return `<span class="selo-p ${cor}" title="Licitação do ${esc(p)}">${esc(p)}</span>`;
   return `<span class="tag portal${MEUS.includes(p) ? " meu" : ""}">${esc(p)}</span>`;
 }
 // ===== botão Score: abre o Consulta Pagador com o CNPJ do órgão =====
@@ -1687,6 +1694,9 @@ class Handler(BaseHTTPRequestHandler):
             if q.get("ver"):
                 return self._send(200, "último envio: " + (_envio["ultimo"] or "nenhum desde que o site ligou")
                                   + (" · enviando agora..." if _envio["rodando"] else ""), "text/plain; charset=utf-8")
+            # só um e-mail por dia: o cron-job chama algumas vezes (caso o site esteja dormindo); &forcar=1 manda de novo
+            if _envio["dia"] == time.strftime("%Y-%m-%d") and not q.get("forcar"):
+                return self._send(200, "ok: o e-mail de hoje já foi enviado (" + _envio["ultimo"] + "). Para mandar de novo, coloque &forcar=1 no fim do link.", "text/plain; charset=utf-8")
             if not _envio["rodando"]:
                 threading.Thread(target=tarefa_email, daemon=True).start()
             return self._send(200, "ok: o resumo está sendo preparado e chega no e-mail em 1 ou 2 minutos", "text/plain; charset=utf-8")
