@@ -828,7 +828,7 @@ aside summary::-webkit-details-marker{display:none}
 .ufs{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 4px}
 .ufc{min-width:42px;padding:6px 8px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--ink);font:600 13px var(--font);cursor:pointer;position:relative}
 .ufc:hover{border-color:var(--accent)}
-.ufc[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ufc[aria-pressed="true"],.ufc.uf-ok{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .ufc.br{padding:6px 12px}
 .ufc.uf-carr[aria-pressed="true"]{opacity:.55}
 .ufc.uf-erro{border-color:var(--bad);color:var(--bad)}
@@ -1243,7 +1243,7 @@ function desenharUfs() {
     `<button type="button" class="ufc br" data-uf="BR" aria-pressed="${atual === "BR"}" title="Todos os estados">Brasil</button>` +
     UFS.map(([u, n]) => {
       const sel = atual === u, s = DADOS && DADOS.uf === "BR" ? st[u] : null;
-      const cls = s === "erro" ? " uf-erro" : "";
+      const cls = s === "erro" ? " uf-erro" : s === "ok" ? " uf-ok" : "";
       const dica = n + (s === "ok" ? `: ${c[u] || 0} licitações` : s === "erro" ? ": o PNCP não respondeu" : "");
       return `<button type="button" class="ufc${cls}" data-uf="${u}" aria-pressed="${sel}" title="${esc(dica)}">${u}</button>`;
     }).join("") + `</div>` +
