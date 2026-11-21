@@ -456,7 +456,7 @@ def _pagina_proposta(uf, modalidade, pagina, tentativas=4):
     return {}
 
 
-MAX_PAGINAS = 30  # até 1.500 licitações por modalidade em cada estado
+MAX_PAGINAS = 100  # até 5.000 licitações por modalidade em cada estado
 _cache, _lock = {}, threading.Lock()
 
 
@@ -1120,7 +1120,7 @@ async function modalidadeP(uf, mod) {
   if (CACHE_P[k] && Date.now() - CACHE_P[k].quando < 2 * 3600 * 1000) return CACHE_P[k].res;
   const p1 = await paginaP(uf, mod, 1);
   let itens = (p1.data || []).slice();
-  const tot = p1.totalPaginas || 1, pags = Math.min(30, tot), outras = [];
+  const tot = p1.totalPaginas || 1, pags = Math.min(100, tot), outras = [];  // até 5.000 por modalidade em cada estado
   for (let pg = 2; pg <= pags; pg++) outras.push(paginaP(uf, mod, pg));
   const rs = await Promise.allSettled(outras);
   // páginas que o PNCP recusou: espera um pouco e tenta de novo, uma de cada vez
@@ -1131,7 +1131,7 @@ async function modalidadeP(uf, mod) {
   }
   const d = new Date(), agora = `${d.getFullYear()}-${doisd(d.getMonth() + 1)}-${doisd(d.getDate())}T${doisd(d.getHours())}:${doisd(d.getMinutes())}`;
   const lista = itens.map(resumirP).filter((x) => !(x.encerramento && x.encerramento < agora));
-  const res = {itens: lista, cortado: tot > 30};
+  const res = {itens: lista, cortado: tot > 100};
   CACHE_P[k] = {quando: Date.now(), res};
   return res;
 }
@@ -1429,7 +1429,7 @@ function desenhar() {
   if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
-  if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 1.500 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
+  if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 5.000 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
   h += lista.slice(0, MOSTRAR).map((x) => cartao(x)).join("");
   if (lista.length > MOSTRAR) h += `<button type="button" class="mais" id="mais">Mostrar mais (${(lista.length - MOSTRAR).toLocaleString("pt-BR")} restantes)</button>`;
