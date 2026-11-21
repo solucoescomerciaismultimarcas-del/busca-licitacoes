@@ -1157,6 +1157,18 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const brl = (v) => v == null ? "não informado" : Number(v) === 0 ? "Sigiloso" : "R$ " + Number(v).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const semAcento = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// raiz da palavra: tira o plural/singular do fim, para "fraldas" achar "fralda" e "cartão" achar "cartões"
+function raiz(w) {
+  if (w.length < 4) return w;
+  let m;
+  if ((m = w.match(/^(.{3,})(?:oes|aes|aos|ao)$/))) return m[1];         // cartões, cartão -> cart
+  if ((m = w.match(/^(.{3,})eis$/))) return m[1] + "e";                   // papéis -> pape (acha papel)
+  if ((m = w.match(/^(.{3,}[aeiou])is$/))) return m[1];                   // hospitais -> hospita
+  if ((m = w.match(/^(.{2,}[rzs])es$/))) return m[1];                   // colheres -> colher, luzes -> luz
+  if ((m = w.match(/^(.{3,}[aeiou])l$/))) return m[1];                    // papel -> pape, hospital -> hospita
+  if ((m = w.match(/^(.{3,})s$/))) return m[1];                           // fraldas -> fralda, geriátricas -> geriatrica
+  return w;
+}
 const CONSULTA = "https://consulta-orgaos.onrender.com/?cnpj=";
 const MEUS = ["Compras.gov.br", "ComprasMG", "SISLOG", "Licitar Digital"];
 const UFS = [["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["BA","Bahia"],["CE","Ceará"],["DF","Distrito Federal"],["ES","Espírito Santo"],["GO","Goiás"],["MA","Maranhão"],["MT","Mato Grosso"],["MS","Mato Grosso do Sul"],["MG","Minas Gerais"],["PA","Pará"],["PB","Paraíba"],["PR","Paraná"],["PE","Pernambuco"],["PI","Piauí"],["RJ","Rio de Janeiro"],["RN","Rio Grande do Norte"],["RS","Rio Grande do Sul"],["RO","Rondônia"],["RR","Roraima"],["SC","Santa Catarina"],["SP","São Paulo"],["SE","Sergipe"],["TO","Tocantins"]];
@@ -1202,7 +1214,7 @@ function contar(lista, campo) { const c = {}; lista.forEach((x) => { c[x[campo]]
 
 function filtrar() {
   if (!DADOS) return [];
-  const q = semAcento($("#q").value).trim().split(/\s+/).filter(Boolean);
+  const q = semAcento($("#q").value).trim().split(/\s+/).filter(Boolean).map(raiz);
   const vmin = numero($("#vmin").value), vmax = numero($("#vmax").value);
   const lim = PRAZO ? parseFloat(PRAZO) : null;
   return DADOS.itens.filter((x) =>
@@ -1245,15 +1257,14 @@ let UFSEL = [];
 function desenharUfs() {
   const atual = $("#uf").value;
   const c = {}, st = (DADOS && DADOS.status) || {};
-  if (DADOS) DADOS.itens.filter((x) => (!PREF.portais.length || PREF.portais.includes(x.portal)) && (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo))
-    .forEach((x) => { c[x.uf] = (c[x.uf] || 0) + 1; });
+  if (DADOS && DADOS.uf === "BR") filtrar().forEach((x) => { c[x.uf] = (c[x.uf] || 0) + 1; });
   const falhos = UFS.map((u) => u[0]).filter((u) => st[u] === "erro");
   $("#f-ufs").innerHTML = `<div class="ufs">` +
     `<button type="button" class="ufc br" data-uf="BR" aria-pressed="${atual === "BR"}" title="Todos os estados">Brasil</button>` +
     UFS.map(([u, n]) => {
       const sel = atual === u, s = DADOS && DADOS.uf === "BR" ? st[u] : null;
-      const cls = s === "erro" ? " uf-erro" : s === "ok" ? " uf-ok" : "";
-      const dica = n + (s === "ok" ? `: ${c[u] || 0} licitações` : s === "erro" ? ": o PNCP não respondeu" : "");
+      const cls = s === "erro" ? " uf-erro" : c[u] ? " uf-ok" : "";
+      const dica = n + (s === "erro" ? ": o PNCP não respondeu" : c[u] ? `: ${c[u]} licitaç${c[u] === 1 ? "ão" : "ões"} com a sua busca` : s === "ok" ? ": nenhuma licitação com a sua busca" : DADOS && DADOS.uf === "BR" ? ": ainda buscando..." : "");
       return `<button type="button" class="ufc${cls}" data-uf="${u}" aria-pressed="${sel}" title="${esc(dica)}">${u}</button>`;
     }).join("") + `</div>` +
     `<div class="uf-info">${falhos.length ? `<b style="color:var(--bad)">${falhos.join(", ")}: o PNCP não respondeu.</b> Clique em Buscar para tentar de novo.` : "Clique num estado, ou em Brasil para todos."}</div>`;
