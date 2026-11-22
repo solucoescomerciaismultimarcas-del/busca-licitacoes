@@ -891,6 +891,10 @@ aside summary::-webkit-details-marker{display:none}
 .acoes button.salvar{color:var(--ink)}
 .acoes button.salvar.on{background:var(--gold);border-color:var(--gold);color:#241a00}
 .acoes button.remover{color:var(--bad);border-color:#7a2f2f}
+.salvar-todas{margin-left:auto;font:700 13px var(--font);padding:6px 14px;border-radius:999px;border:1px solid #7a5a12;background:var(--gold-soft);color:var(--gold);cursor:pointer;white-space:nowrap}
+.salvar-todas:hover{background:var(--gold);color:#241a00}
+.salvar-todas.feito{cursor:default;opacity:.8}
+.salvar-todas.feito:hover{background:var(--gold-soft);color:var(--gold)}
 .ja-salva{display:inline-flex;align-items:center;font:700 13px var(--font);padding:6px 12px;border-radius:8px;color:var(--gold);background:var(--gold-soft);border:1px solid #7a5a12;cursor:default}
 .aba-op{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:8px;font:700 14px var(--font);padding:9px 16px;border-radius:999px;border:1px solid #7a5a12;background:var(--gold-soft);color:var(--gold);cursor:pointer}
 .aba-op b{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--gold);color:#241a00;font-size:12px}
@@ -1346,6 +1350,20 @@ window.addEventListener("storage", (e) => {
   $("#n-salvas").textContent = Object.keys(SALVAS).length;
   if (!document.querySelector("#pg")) desenhar();
 });
+function botaoSalvarTodas(lista) {
+  if (!lista.length) return "";
+  const faltam = lista.filter((x) => !SALVAS[x.id]).length;
+  if (!faltam) return `<span class="salvar-todas feito" title="Todas desta busca já estão nas Oportunidades">⭐ Todas salvas</span>`;
+  return `<button type="button" class="salvar-todas" data-salvar-todas="1" title="Guardar todas desta busca em Oportunidades">⭐ Salvar todas (${faltam.toLocaleString("pt-BR")})</button>`;
+}
+function salvarTodas() {
+  const novas = filtrar().filter((x) => !SALVAS[x.id]);
+  if (!novas.length) return;
+  if (novas.length > 30 && !confirm(`Salvar as ${novas.length.toLocaleString("pt-BR")} licitações desta busca nas Oportunidades?`)) return;
+  const agora = Date.now();
+  novas.forEach((x) => { SALVAS[x.id] = Object.assign({}, x, {salvaEm: agora}); });
+  guardarSalvas(); desenhar();
+}
 function desenharSalvas() {
   // as que ainda estão abertas primeiro (a disputa mais próxima em cima); as encerradas vão para o fim
   const agora = agoraLocal(), fechou = (x) => !!(x.encerramento && x.encerramento < agora);
@@ -1437,7 +1455,7 @@ function desenhar() {
   if (VER_SALVAS) return desenharSalvas();
   if (!DADOS) return;
   const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
-  let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span><span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
+  let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span>${botaoSalvarTodas(lista)}<span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
   if (DADOS.progresso) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Carregando os estados: ${DADOS.progresso.feitos} de ${DADOS.progresso.total}. As licitações vão aparecendo enquanto isso.</div>`;
   if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
@@ -1603,6 +1621,7 @@ $("#res").addEventListener("click", (e) => {
   if (e.target.id === "mais") { MOSTRAR += 40; desenhar(); return; }
   const bs = e.target.closest("[data-salvar]");
   if (bs) { alternarSalva(bs.dataset.salvar); return; }
+  if (e.target.closest("[data-salvar-todas]")) { salvarTodas(); return; }
   if (e.target.id === "voltar") { VER_SALVAS = false; desenhar(); return; }
   const bc = e.target.closest("[data-copiar]");
   if (bc) {
