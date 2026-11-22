@@ -1048,6 +1048,31 @@ footer{font-size:12px;color:var(--dim)}
 </div>
 
 <script>
+// ===== Mudança de endereço: o endereço antigo leva as Oportunidades e preferências para sigalicita.com.br =====
+// (cada endereço tem a sua "gaveta" no navegador; assim nada se perde)
+(function () {
+  const NOVO = "sigalicita.com.br";
+  if (location.hostname.endsWith(".onrender.com")) {
+    let pacote = "";
+    try {
+      const d = {s: localStorage.getItem("busca_salvas") || "", p: localStorage.getItem("busca_pref") || ""};
+      if (d.s || d.p) pacote = "#importar=" + encodeURIComponent(JSON.stringify(d));
+    } catch (e) {}
+    location.replace("https://" + NOVO + location.pathname + location.search + pacote);
+    throw new Error("Indo para o endereço novo: " + NOVO);  // para aqui; a página nova carrega em seguida
+  }
+  if (location.hash.startsWith("#importar=")) {
+    try {
+      const d = JSON.parse(decodeURIComponent(location.hash.slice(10)));
+      if (d.s) {
+        const antigas = JSON.parse(d.s) || {}, atuais = JSON.parse(localStorage.getItem("busca_salvas") || "{}") || {};
+        localStorage.setItem("busca_salvas", JSON.stringify(Object.assign(antigas, atuais)));  // junta as duas, sem perder nenhuma
+      }
+      if (d.p && !localStorage.getItem("busca_pref")) localStorage.setItem("busca_pref", d.p);
+    } catch (e) {}
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+})();
 // ===== Busca direto do navegador no PNCP =====
 // O PNCP recusa a maioria dos pedidos que vêm do Render (muitos sites usam o mesmo endereço de lá).
 // Por isso o próprio navegador da usuária busca no PNCP, com a internet dela. O servidor fica de reserva.
