@@ -891,6 +891,7 @@ aside summary::-webkit-details-marker{display:none}
 .acoes button.salvar{color:var(--ink)}
 .acoes button.salvar.on{background:var(--gold);border-color:var(--gold);color:#241a00}
 .acoes button.remover{color:var(--bad);border-color:#7a2f2f}
+.ja-salva{display:inline-flex;align-items:center;font:700 13px var(--font);padding:6px 12px;border-radius:8px;color:var(--gold);background:var(--gold-soft);border:1px solid #7a5a12;cursor:default}
 .aba-op{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:8px;font:700 14px var(--font);padding:9px 16px;border-radius:999px;border:1px solid #7a5a12;background:var(--gold-soft);color:var(--gold);cursor:pointer}
 .aba-op b{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--gold);color:#241a00;font-size:12px}
 .aba-op[aria-pressed="true"]{background:var(--gold);color:#241a00}
@@ -1309,7 +1310,7 @@ function cartao(x, emSalvas) {
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
       ${x.cnpj ? htmlNota(x.cnpj) : ""}
       ${emSalvas ? `<button type="button" class="remover" data-salvar="${esc(x.id)}">🗑 Remover</button>`
-        : ""}
+        : SALVAS[x.id] ? `<span class="ja-salva" title="Esta licitação está nas suas Oportunidades">⭐ Salva</span>` : ""}
     </div>
     ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id], x)}</div>` : ""}
   </article>`;
