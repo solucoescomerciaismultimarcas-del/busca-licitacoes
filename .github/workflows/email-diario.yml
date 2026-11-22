@@ -1,0 +1,23 @@
+name: E-mail diário
+
+on:
+  schedule:
+    - cron: "37 9 * * *"   # 6h37 em Brasília, todo dia
+  workflow_dispatch:        # botão "Run workflow" para mandar na hora
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Buscar licitações e mandar o e-mail
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERTA_EMAIL: ${{ secrets.ALERTA_EMAIL }}
+        run: |
+          python3 -c "
+          import busca_licitacoes as b
+          b.tarefa_email()
+          print(b._envio['ultimo'])
+          if 'ERRO' in b._envio['ultimo']: raise SystemExit(1)
+          "
