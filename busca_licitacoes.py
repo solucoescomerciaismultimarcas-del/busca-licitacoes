@@ -1309,7 +1309,7 @@ function cartao(x, emSalvas) {
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
       ${x.cnpj ? htmlNota(x.cnpj) : ""}
       ${emSalvas ? `<button type="button" class="remover" data-salvar="${esc(x.id)}">🗑 Remover</button>`
-        : `<button type="button" class="salvar${SALVAS[x.id] ? " on" : ""}" data-salvar="${esc(x.id)}" title="${SALVAS[x.id] ? "Clique para tirar das Oportunidades" : "Guardar em Oportunidades para analisar depois"}">${SALVAS[x.id] ? "⭐ Salva" : "☆ Salvar"}</button>`}
+        : ""}
     </div>
     ${ABERTOS[x.id] ? `<div class="det">${painelDet(DET[x.id], x)}</div>` : ""}
   </article>`;
@@ -1333,6 +1333,18 @@ function alternarSalva(id) {
   }
   guardarSalvas(); desenhar();
 }
+function botaoSalvarDet(id) {
+  return SALVAS[id]
+    ? `<button type="button" class="salvar on" data-salvar-det="1" title="Clique para tirar das Oportunidades">⭐ Salva nas Oportunidades</button>`
+    : `<button type="button" class="salvar" data-salvar-det="1" title="Guardar em Oportunidades para analisar depois">☆ Salvar</button>`;
+}
+// salvou em outra aba (na página da licitação): a busca atualiza o número e os botões sozinha
+window.addEventListener("storage", (e) => {
+  if (e.key !== "busca_salvas") return;
+  try { SALVAS = JSON.parse(e.newValue || "{}") || {}; } catch (er) { SALVAS = {}; }
+  $("#n-salvas").textContent = Object.keys(SALVAS).length;
+  if (!document.querySelector("#pg")) desenhar();
+});
 function desenharSalvas() {
   // as que ainda estão abertas primeiro (a disputa mais próxima em cima); as encerradas vão para o fim
   const agora = agoraLocal(), fechou = (x) => !!(x.encerramento && x.encerramento < agora);
@@ -1659,6 +1671,7 @@ async function paginaLicitacao(id) {
       ${x.cnpj ? htmlNota(x.cnpj) : ""}
       <button type="button" data-cal="${esc(x.id)}">📅 Salvar no calendário</button>
       <button type="button" data-copiar="${esc(location.href)}">🔗 Copiar link</button>
+      ${botaoSalvarDet(x.id)}
     </div>
     ${""}<section class="secao" id="sec-docs"><h3>Documentos do edital</h3><div class="carregando" style="padding:12px"><div class="spin"></div>Buscando documentos e itens no PNCP…</div></section>
     <section class="secao" id="sec-itens" hidden></section>
@@ -1667,8 +1680,14 @@ async function paginaLicitacao(id) {
     <section class="secao"><h3>Dados da contratação</h3>${blocoDados(x).replace(/^[\s\S]*?<div><h4>Dados da contratação<\/h4>/, "<div>")}</section>`;
   pedirNotas();
   alvo.addEventListener("click", (e) => {
-    const bc = e.target.closest("[data-copiar]"), bk = e.target.closest("[data-cal]");
+    const bc = e.target.closest("[data-copiar]"), bk = e.target.closest("[data-cal]"), bs = e.target.closest("[data-salvar-det]");
     if (bk) salvarCalendario(x);
+    if (bs) {
+      if (SALVAS[x.id]) delete SALVAS[x.id];
+      else { const y = Object.assign({}, x, {salvaEm: Date.now()}); delete y.complemento; SALVAS[x.id] = y; }
+      guardarSalvas();
+      bs.outerHTML = botaoSalvarDet(x.id);
+    }
     if (bc) {
       const t = bc.dataset.copiar, ok = () => { bc.textContent = "✔ Link copiado"; setTimeout(() => { bc.textContent = "🔗 Copiar link"; }, 2000); };
       if (navigator.clipboard) navigator.clipboard.writeText(t).then(ok, () => prompt("Copie o link:", t)); else prompt("Copie o link:", t);
