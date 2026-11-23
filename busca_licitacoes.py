@@ -512,16 +512,17 @@ def _get_tentando(url, tentativas=3):
 def _get_bases(caminho):
     """O PNCP mudou alguns endereços de /api/pncp/v1 para /api/consulta/v1: tenta os dois."""
     ultimo = None
-    for base in (PNCP, PNCP_API):
+    # documentos e itens hoje respondem em /api/pncp/v1 (em /api/consulta/v1 dão 403): tenta esse primeiro
+    for base in (PNCP_API, PNCP):
         try:
             r = _get_tentando(base + caminho)
             if r is not None:
                 return r
         except urllib.error.HTTPError as e:
             ultimo = e
-            if e.code not in (301, 302, 307, 308, 400, 404, 405):
+            if e.code not in (301, 302, 307, 308, 400, 403, 404, 405):
                 raise
-    if ultimo is not None and ultimo.code not in (301, 302, 307, 308, 404):
+    if ultimo is not None and ultimo.code not in (301, 302, 307, 308, 403, 404):
         raise ultimo
     return None
 
