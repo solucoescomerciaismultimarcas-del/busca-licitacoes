@@ -1203,7 +1203,7 @@ function raiz(w) {
   if ((m = w.match(/^(.{3,})s$/))) return m[1];                           // fraldas -> fralda, geriátricas -> geriatrica
   return w;
 }
-const CONSULTA = "https://consulta-orgaos.onrender.com/?cnpj=";
+const CONSULTA = "https://score.sigalicita.com.br/?cnpj=";
 const MEUS = ["Compras.gov.br", "ComprasMG", "SISLOG", "Licitar Digital"];
 const UFS = [["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["BA","Bahia"],["CE","Ceará"],["DF","Distrito Federal"],["ES","Espírito Santo"],["GO","Goiás"],["MA","Maranhão"],["MT","Mato Grosso"],["MS","Mato Grosso do Sul"],["MG","Minas Gerais"],["PA","Pará"],["PB","Paraíba"],["PR","Paraná"],["PE","Pernambuco"],["PI","Piauí"],["RJ","Rio de Janeiro"],["RN","Rio Grande do Norte"],["RS","Rio Grande do Sul"],["RO","Rondônia"],["RR","Roraima"],["SC","Santa Catarina"],["SP","São Paulo"],["SE","Sergipe"],["TO","Tocantins"]];
 const MODS = [[6,"Pregão Eletrônico"],[8,"Dispensa"],[4,"Concorrência Eletrônica"],[7,"Pregão Presencial"],[5,"Concorrência Presencial"],[12,"Credenciamento"],[9,"Inexigibilidade"],[1,"Leilão Eletrônico"]];
