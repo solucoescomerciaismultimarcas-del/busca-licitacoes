@@ -907,6 +907,7 @@ aside summary::-webkit-details-marker{display:none}
 .aba-op b{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--gold);color:#241a00;font-size:12px}
 .aba-op[aria-pressed="true"]{background:var(--gold);color:#241a00}
 .aba-op[aria-pressed="true"] b{background:#241a00;color:var(--gold)}
+.tag.nos-itens{color:#7dd3fc;border-color:#1e5a7a;background:#0c2a3d}
 .tag.encerrada{color:var(--bad);border-color:#7a2f2f;background:var(--bad-bg)}
 .nota{display:inline-flex;align-items:center;gap:7px;font:700 13px var(--font);padding:6px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--muted);text-decoration:none;white-space:nowrap}
 .nota b{font:800 13px var(--mono)}
@@ -1257,6 +1258,7 @@ function contar(lista, campo) { const c = {}; lista.forEach((x) => { c[x[campo]]
 function filtrar() {
   if (!DADOS) return [];
   const q = semAcento($("#q").value).trim().split(/\s+/).filter(Boolean).map(raiz);
+  const nosItens = NOS_ITENS[chaveItens()] || null;
   const vmin = numero($("#vmin").value), vmax = numero($("#vmax").value);
   const lim = PRAZO ? parseFloat(PRAZO) : null;
   return DADOS.itens.filter((x) =>
@@ -1264,7 +1266,7 @@ function filtrar() {
     (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo) &&
     (DADOS.uf !== "BR" || !UFSEL.length || UFSEL.includes(x.uf)) &&
     (!PREF.cats.length || (x.categorias || []).some((c) => PREF.cats.includes(c))) &&
-    (!q.length || q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p))) &&
+    (!q.length || q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p)) || (nosItens && nosItens.has(x.id))) &&
     (vmin == null || (x.valor || 0) >= vmin) && (vmax == null || (x.valor != null && x.valor <= vmax)) &&
     (lim == null || (diasAte(x.encerramento) != null && diasAte(x.encerramento) <= lim)) &&
     (!DIA || (x.encerramento && (MODO_DIA === "no" ? x.encerramento.slice(0, 10) === DIA : x.encerramento.slice(0, 10) >= DIA)))
@@ -1331,6 +1333,7 @@ function cartao(x, emSalvas) {
       ${seloPortal(x.portal)}
       ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
       ${x.tipo === "Serviço" ? `<span class="tag">Serviço</span>` : ""}
+      ${!emSalvas && achadaSoNosItens(x) ? `<span class="tag nos-itens" title="O produto que você procurou está na lista de itens desta licitação">🔎 nos itens</span>` : ""}
       ${x.assistencia ? `<span class="tag assist" title="Eletrodoméstico ou objeto que fala em assistência técnica: confira as exigências no edital">🔧 Exige assistência técnica</span>` : ""}
     </div>
     <div class="corpo">
@@ -1396,6 +1399,32 @@ function salvarTodas() {
   const agora = Date.now();
   novas.forEach((x) => { SALVAS[x.id] = Object.assign({}, x, {salvaEm: agora}); });
   guardarSalvas(); desenhar();
+}
+// ===== procurar a palavra também dentro dos itens (busca do PNCP) =====
+const NOS_ITENS = {}; let ESPERA_ITENS = 0, ITENS_BUSCANDO = "";
+function chaveItens() { return semAcento($("#q").value).trim().replace(/\s+/g, " "); }
+async function buscarNosItens() {
+  const k = chaveItens();
+  if (k.length < 3 || NOS_ITENS[k] || ITENS_BUSCANDO === k) return;
+  ITENS_BUSCANDO = k; desenhar();
+  const ids = new Set();
+  try {
+    for (let pg = 1; pg <= 4; pg++) {  // até 2.000 licitações abertas com a palavra
+      const url = "https://pncp.gov.br/api/search/?" + new URLSearchParams({q: $("#q").value.trim(), tipos_documento: "edital", status: "recebendo_proposta", tam_pagina: 500, pagina: pg});
+      const r = await fetch(url, {headers: {Accept: "application/json"}});
+      if (!r.ok) break;
+      const d = await r.json(), it = d.items || [];
+      it.forEach((x) => { if (x.numero_controle_pncp) ids.add(x.numero_controle_pncp); });
+      if (it.length < 500 || ids.size >= (d.total || 0)) break;
+    }
+    NOS_ITENS[k] = ids;
+  } catch (e) {}
+  if (ITENS_BUSCANDO === k) ITENS_BUSCANDO = "";
+  if (chaveItens() === k) desenhar();
+}
+function achadaSoNosItens(x) {
+  const q = semAcento($("#q").value).trim().split(/\s+/).filter(Boolean).map(raiz), ni = NOS_ITENS[chaveItens()];
+  return q.length && ni && ni.has(x.id) && !q.every((p) => semAcento(x.objeto + " " + x.orgao + " " + x.unidade + " " + x.municipio).includes(p));
 }
 function desenharSalvas() {
   // as que ainda estão abertas primeiro (a disputa mais próxima em cima); as encerradas vão para o fim
@@ -1493,6 +1522,7 @@ function desenhar() {
   if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
     : `<div class="aviso">O PNCP não respondeu para: ${esc(DADOS.erros.join("; "))}. Tente buscar de novo em alguns minutos.</div>`;
+  if (ITENS_BUSCANDO && ITENS_BUSCANDO === chaveItens()) h += `<p class="loc" style="margin:0 0 10px">🔎 Procurando "${esc($("#q").value.trim())}" também dentro dos itens das licitações…</p>`;
   if (DADOS.cortadas.length) h += `<div class="aviso">Muitas licitações em ${esc(DADOS.cortadas.join(", "))}: mostrando as 5.000 primeiras de cada uma. Use a palavra-chave para achar o que procura.</div>`;
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma licitação com esses filtros</b>Tente marcar mais portais ou modalidades, ou mudar a palavra-chave.</div>`;
   h += lista.slice(0, MOSTRAR).map((x) => cartao(x)).join("");
@@ -1592,7 +1622,7 @@ $("#f").addEventListener("submit", (e) => {
 $("#uf").addEventListener("change", () => { VER_SALVAS = false; buscar(); });
 $("#aba-op").addEventListener("click", () => { VER_SALVAS = !VER_SALVAS; window.scrollTo(0, 0); desenhar(); });
 guardarSalvas();
-$("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); });
+$("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); clearTimeout(ESPERA_ITENS); ESPERA_ITENS = setTimeout(buscarNosItens, 700); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
 function hojeMais(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 $("#dia").min = hojeMais(0);
