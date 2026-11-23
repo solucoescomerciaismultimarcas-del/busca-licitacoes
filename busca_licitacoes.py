@@ -803,6 +803,9 @@ button{font-family:inherit}
 .busca .q{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px;padding:0 18px}
 .busca .q svg{color:var(--dim);flex:none}
 .busca input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 16px var(--font);padding:15px 0}
+.busca .q #limpa{flex:none;width:30px;height:30px;padding:0;border-radius:50%;background:transparent;color:var(--dim);font:400 24px/1 var(--font);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.busca .q #limpa:hover{background:var(--surf2);color:var(--ink)}
+.busca .q #limpa[hidden]{display:none}
 .busca input::placeholder{color:var(--dim)}
 .busca input:focus{outline:none}
 .busca select{border:0;border-left:1px solid var(--line2);background:var(--surf2);color:var(--ink);font:600 14px var(--font);padding:0 14px;max-width:200px}
@@ -997,7 +1000,8 @@ footer{font-size:12px;color:var(--dim)}
 
   <form class="busca" id="f" autocomplete="off">
     <label class="q"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" placeholder="O que sua empresa vende? Ex.: material de escritório" aria-label="Palavra-chave"></label>
+      <input id="q" placeholder="O que sua empresa vende? Ex.: material de escritório" aria-label="Palavra-chave">
+      <button type="button" id="limpa" title="Apagar o texto" aria-label="Apagar o texto" hidden>&times;</button></label>
     <select id="uf" aria-label="Estado"></select>
     <button id="bt" type="submit">Buscar</button>
   </form>
@@ -1622,6 +1626,10 @@ $("#f").addEventListener("submit", (e) => {
 $("#uf").addEventListener("change", () => { VER_SALVAS = false; buscar(); });
 $("#aba-op").addEventListener("click", () => { VER_SALVAS = !VER_SALVAS; window.scrollTo(0, 0); desenhar(); });
 guardarSalvas();
+function mostraLimpa() { $("#limpa").hidden = !$("#q").value; }
+$("#limpa").addEventListener("click", () => { $("#q").value = ""; $("#q").dispatchEvent(new Event("input")); $("#q").focus(); });
+$("#q").addEventListener("input", mostraLimpa);
+setTimeout(mostraLimpa, 0);
 $("#q").addEventListener("input", () => { MOSTRAR = 40; if (DADOS) desenhar(); clearTimeout(ESPERA_ITENS); ESPERA_ITENS = setTimeout(buscarNosItens, 700); });
 ["#vmin", "#vmax"].forEach((s) => $(s).addEventListener("input", () => { if (DADOS) desenhar(); }));
 function hojeMais(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
