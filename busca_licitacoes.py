@@ -898,6 +898,8 @@ aside summary::-webkit-details-marker{display:none}
 .acoes button.salvar{color:var(--ink)}
 .acoes button.salvar.on{background:var(--gold);border-color:var(--gold);color:#241a00}
 .acoes button.remover{color:var(--bad);border-color:#7a2f2f}
+.remover-todas{margin-left:auto;font:700 13px var(--font);padding:6px 14px;border-radius:999px;border:1px solid #7a2f2f;background:transparent;color:var(--bad);cursor:pointer;white-space:nowrap}
+.remover-todas:hover{background:rgba(229,72,77,.12)}
 .salvar-todas{margin-left:auto;font:700 13px var(--font);padding:6px 14px;border-radius:999px;border:1px solid #7a5a12;background:var(--gold-soft);color:var(--gold);cursor:pointer;white-space:nowrap}
 .salvar-todas:hover{background:var(--gold);color:#241a00}
 .salvar-todas.feito{cursor:default;opacity:.8}
@@ -1452,7 +1454,7 @@ function desenharSalvas() {
   // as que ainda estão abertas primeiro (a disputa mais próxima em cima); as encerradas vão para o fim
   const agora = agoraLocal(), fechou = (x) => !!(x.encerramento && x.encerramento < agora);
   const lista = Object.values(SALVAS).sort((a, b) => fechou(a) - fechou(b) || (a.encerramento || "9").localeCompare(b.encerramento || "9"));
-  let h = `<div class="cab"><span><b>${lista.length}</b> oportunidade${lista.length === 1 ? " salva" : "s salvas"} para analisar</span><button type="button" class="mini-bt" id="voltar">← Voltar para a busca</button></div>`;
+  let h = `<div class="cab"><span><b>${lista.length}</b> oportunidade${lista.length === 1 ? " salva" : "s salvas"} para analisar</span><button type="button" class="mini-bt" id="voltar">← Voltar para a busca</button>${lista.length ? `<button type="button" class="remover-todas" id="remover-todas" title="Tirar todas das Oportunidades">🗑 Remover todas</button>` : ""}</div>`;
   if (!lista.length) h += `<div class="vazio"><b>Nenhuma oportunidade salva ainda</b>Na busca, clique em ☆ Salvar na licitação que quer analisar depois.</div>`;
   h += lista.map((x) => cartao(x, true)).join("");
   $("#res").innerHTML = h;
@@ -1725,6 +1727,11 @@ $("#res").addEventListener("click", (e) => {
   if (bs) { alternarSalva(bs.dataset.salvar); return; }
   if (e.target.closest("[data-salvar-todas]")) { salvarTodas(); return; }
   if (e.target.id === "voltar") { VER_SALVAS = false; desenhar(); return; }
+  if (e.target.id === "remover-todas") {
+    const n = Object.keys(SALVAS).length;
+    if (!confirm(`Remover todas as ${n} oportunidades salvas? Isso não pode ser desfeito.`)) return;
+    SALVAS = {}; guardarSalvas(); desenhar(); return;
+  }
   const bc = e.target.closest("[data-copiar]");
   if (bc) {
     const t = bc.dataset.copiar, ok = () => { bc.textContent = "✔ Link copiado"; setTimeout(() => { bc.textContent = "🔗 Copiar link"; }, 2000); };
