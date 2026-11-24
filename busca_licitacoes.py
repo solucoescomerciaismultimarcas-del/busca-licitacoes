@@ -715,11 +715,14 @@ def montar_resumo():
     ontem = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora - 86400))
     daqui2 = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora + 2 * 86400))
     agora_s = time.strftime("%Y-%m-%dT%H:%M", time.localtime(agora))
+    hoje_br = time.strftime("%Y-%m-%d", time.gmtime(agora - 3 * 3600))  # data de hoje em Brasília
 
     cats = _lista_env("ALERTA_CATEGORIAS")
     so_produto = os.environ.get("ALERTA_TIPO", "produto").lower().startswith("prod")
 
     def passa(x):
+        if (x.get("encerramento") or "9")[:10] <= hoje_br:
+            return False  # encerra hoje: não dá mais tempo de participar
         if so_produto and x.get("tipo") == "Serviço":
             return False
         if portais and x["portal"] not in portais:
@@ -1278,7 +1281,9 @@ function filtrar() {
   const nosItens = NOS_ITENS[chaveItens()] || null;
   const vmin = numero($("#vmin").value), vmax = numero($("#vmax").value);
   const lim = PRAZO ? parseFloat(PRAZO) : null;
+  const hoje = agoraLocal().slice(0, 10);  // as que encerram hoje não dão mais tempo de participar
   return DADOS.itens.filter((x) =>
+    (!x.encerramento || x.encerramento.slice(0, 10) > hoje) &&
     (!PREF.portais.length || PREF.portais.includes(x.portal)) &&
     (!PREF.tipo || (x.tipo || "Produto") === PREF.tipo) &&
     (DADOS.uf !== "BR" || !UFSEL.length || UFSEL.includes(x.uf)) &&
