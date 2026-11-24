@@ -1540,6 +1540,7 @@ function desenhar() {
   if (!DADOS) return;
   const lista = filtrar(), nome = DADOS.uf === "BR" ? "todo o Brasil" : (UFS.find((u) => u[0] === DADOS.uf) || ["", DADOS.uf])[1];
   let h = `<div class="cab"><span><b>${lista.length.toLocaleString("pt-BR")}</b> licitaç${lista.length === 1 ? "ão encontrada" : "ões encontradas"} em <b>${esc(nome)}</b> com proposta em aberto${DIA ? ` · disputa ${MODO_DIA === "no" ? "no dia" : "a partir de"} <b>${DIA.split("-").reverse().join("/")}</b>` : ""}</span>${botaoSalvarTodas(lista)}<span class="at">atualizado ${esc(DADOS.atualizado)}</span></div>`;
+  if (DADOS.guardada) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Mostrando a lista de ${esc(DADOS.atualizado)}. Atualizando com o PNCP…</div>`;
   if (DADOS.progresso) h += `<div class="carregando" style="padding:12px 16px"><div class="spin"></div>Carregando os estados: ${DADOS.progresso.feitos} de ${DADOS.progresso.total}. As licitações vão aparecendo enquanto isso.</div>`;
   if (DADOS.erros.length) h += (DADOS.uf === "BR" || DADOS.uf === "MEUS")
     ? `<div class="aviso">O PNCP não respondeu para: <b>${esc(DADOS.erros.join(", "))}</b>. Clique em Buscar de novo daqui a alguns minutos (os estados que já vieram ficam guardados e voltam rápido).</div>`
@@ -1620,13 +1621,25 @@ async function buscar() {
   }
   PREF.uf = uf; salvar(); MOSTRAR = 40; desenharUfs();
   $("#bt").disabled = true;
-  $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. Leva alguns segundos.</div>`;
+  // mostra na hora a última lista guardada deste estado (até 24 h) e atualiza por trás
+  const chave = "busca_ultima_" + uf + "_" + PREF.mods.slice().sort().join(",");
+  let velha = null;
+  try { velha = JSON.parse(localStorage.getItem(chave) || "null"); } catch (e) {}
+  if (velha && Date.now() - velha.quando < 24 * 3600 * 1000 && velha.d && velha.d.uf === uf) {
+    DADOS = Object.assign(velha.d, {guardada: true}); desenhar();
+  } else {
+    $("#res").innerHTML = `<div class="carregando"><div class="spin"></div>Buscando licitações abertas de ${esc(uf)} no PNCP. Leva alguns segundos.</div>`;
+  }
   try {
     const d = await buscarEstado(uf, PREF.mods);
     if (meu !== pedido) return;
+    if (DADOS && DADOS.guardada && !d.itens.length && d.erros.length) { DADOS.guardada = false; DADOS.erros = d.erros; desenhar(); return; }
     DADOS = d; desenhar();
+    if (!d.erros.length) { try { localStorage.setItem(chave, JSON.stringify({quando: Date.now(), d})); } catch (e) {} }
   } catch (e) {
-    if (meu === pedido) $("#res").innerHTML = `<div class="erro"><b>Não deu para buscar.</b> ${esc(e.message)}</div>`;
+    if (meu !== pedido) return;
+    if (DADOS && DADOS.guardada) { DADOS.guardada = false; DADOS.erros = [e.message]; desenhar(); }
+    else $("#res").innerHTML = `<div class="erro"><b>Não deu para buscar.</b> ${esc(e.message)}</div>`;
   } finally { if (meu === pedido) $("#bt").disabled = false; }
 }
 
