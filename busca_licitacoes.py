@@ -1149,20 +1149,27 @@ const PRIORIDADE = new Set();  // estados que ela marcou: passam na frente
 async function vaga(prio) { if (VAGAS > 0) { VAGAS--; return; } await new Promise((ok) => prio ? ESPERA.unshift(ok) : ESPERA.push(ok)); }
 function soltaVaga() { const prox = ESPERA.shift(); if (prox) prox(); else VAGAS++; }
 const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
+let PAUSA_ATE = 0;  // quando o PNCP pede para esperar, todos os pedidos esperam juntos
 function doisd(n) { return String(n).padStart(2, "0"); }
 async function paginaP(uf, mod, pg) {
   const fim = new Date(); fim.setDate(fim.getDate() + 120);
   const url = `${PNCP_URL}?dataFinal=${fim.getFullYear()}${doisd(fim.getMonth() + 1)}${doisd(fim.getDate())}&codigoModalidadeContratacao=${mod}&uf=${uf}&pagina=${pg}&tamanhoPagina=50`;
   for (let t = 1; t <= 5; t++) {
     let r;
+    if (PAUSA_ATE > Date.now()) await dormir(PAUSA_ATE - Date.now());
     await vaga(PRIORIDADE.has(uf));
     try { r = await fetch(url, {headers: {Accept: "application/json"}}); }
-    catch (e) { soltaVaga(); if (t >= 2) throw new Error("sem conexão com o PNCP"); await dormir(1500); continue; }
+    catch (e) {
+      // o PNCP às vezes recusa (limite de consultas) sem deixar o navegador ler a resposta: espera e tenta de novo
+      soltaVaga(); if (t >= 4) throw new Error("sem conexão com o PNCP");
+      PAUSA_ATE = Math.max(PAUSA_ATE, Date.now() + 4000 * t); continue;
+    }
     try {
       if (r.status === 204) return {};
       if (r.ok) { const txt = await r.text(); return txt.trim() ? JSON.parse(txt) : {}; }
     } finally { soltaVaga(); }
     if ((r.status < 500 && r.status !== 429) || t === 5) throw new Error("PNCP respondeu " + r.status);
+    if (r.status === 429) PAUSA_ATE = Math.max(PAUSA_ATE, Date.now() + 5000 * t);
     await dormir((r.status === 429 ? 5000 : 2000) * t);
   }
   return {};
@@ -1177,15 +1184,15 @@ async function modalidadeP(uf, mod) {
   for (let pg = 2; pg <= pags; pg++) outras.push(paginaP(uf, mod, pg));
   const rs = await Promise.allSettled(outras);
   // páginas que o PNCP recusou: espera um pouco e tenta de novo, uma de cada vez
+  let faltaram = 0;
   for (let i = 0; i < rs.length; i++) {
     if (rs[i].status === "fulfilled") { itens = itens.concat(rs[i].value.data || []); continue; }
-    await dormir(8000);
-    itens = itens.concat((await paginaP(uf, mod, i + 2)).data || []);  // se falhar de novo, o estado aparece como "falhou"
+    faltaram++;  // já tentou 5 vezes: mostra as que vieram e avisa que faltou um pedaço
   }
   const d = new Date(), agora = `${d.getFullYear()}-${doisd(d.getMonth() + 1)}-${doisd(d.getDate())}T${doisd(d.getHours())}:${doisd(d.getMinutes())}`;
   const lista = itens.map(resumirP).filter((x) => !(x.encerramento && x.encerramento < agora));
-  const res = {itens: lista, cortado: tot > 100};
-  CACHE_P[k] = {quando: Date.now(), res};
+  const res = {itens: lista, cortado: tot > 100, faltaram};
+  if (!faltaram) CACHE_P[k] = {quando: Date.now(), res};
   return res;
 }
 async function buscarEstadoDireto(uf, mods) {
@@ -1193,12 +1200,20 @@ async function buscarEstadoDireto(uf, mods) {
   const rs = await Promise.allSettled(mods.map((m) => modalidadeP(uf, m)));
   rs.forEach((r, i) => {
     const nome = CFG.modalidades[mods[i]] || mods[i];
-    if (r.status === "rejected") { erros.push(nome + ": " + r.reason.message); return; }
+    if (r.status === "rejected") { erros.push(msgPncp(nome + ": " + r.reason.message)); return; }
     r.value.itens.forEach((x) => { if (!vistos.has(x.id)) { vistos.add(x.id); itens.push(x); } });
+    if (r.value.faltaram) erros.push(`${nome}: faltou ${r.value.faltaram === 1 ? "1 página" : r.value.faltaram + " páginas"} (o PNCP pediu para esperar)`);
     if (r.value.cortado) cortadas.push(nome);
   });
   const d = new Date();
   return {uf, itens, erros, cortadas, atualizado: `${doisd(d.getDate())}/${doisd(d.getMonth() + 1)}/${d.getFullYear()} ${doisd(d.getHours())}:${doisd(d.getMinutes())}`};
+}
+// deixa a mensagem de erro do PNCP curta e sem códigos de página
+function msgPncp(t) {
+  t = String(t || "");
+  const nome = (t.match(/^([^:]{2,40}):/) || [])[1];
+  if (/429|Limite de requisi/i.test(t)) return (nome ? nome + ": " : "") + "o PNCP pediu para esperar (muitas consultas ao mesmo tempo)";
+  return t.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
 }
 // tenta direto; se o navegador não conseguir falar com o PNCP, usa o servidor como antes
 async function buscarEstado(uf, mods) {
@@ -1207,7 +1222,8 @@ async function buscarEstado(uf, mods) {
     if (d.itens.length || !d.erros.some((e) => e.includes("sem conexão"))) return d;
   } catch (e) {}
   const r = await fetch(`/api/busca?uf=${uf}&mods=${mods.join(",")}`), d = await r.json();
-  if (!r.ok) throw new Error(d.erro || "Falha na busca.");
+  if (!r.ok) throw new Error(msgPncp(d.erro || "Falha na busca."));
+  d.erros = (d.erros || []).map(msgPncp);
   return d;
 }
 const $ = (s) => document.querySelector(s);
