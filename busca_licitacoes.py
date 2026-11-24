@@ -271,6 +271,7 @@ PORTAIS_CONHECIDOS = [
     ("ComprasMG", ("compras do estado de minas gerais", "comprasmg"), ("compras.mg.gov.br",)),
     ("Licitar Digital", ("licitar digital", "libre solucoes em tecnologia"), ("licitardigital.com.br",)),
     ("SISLOG", ("sislog", "estado de goias", "administracao de goias", "governo de goias"), ("sislog", "comprasnet.go.gov.br", ".go.gov.br")),
+    ("Licitações-e", ("licitacoes-e", "licitacoes e", "banco do brasil"), ("licitacoes-e", "bb.com.br")),
     ("BLL Compras", ("bll compras",), ("bllcompras.com",)),
     ("Licitanet", ("licitanet",), ("licitanet.com.br",)),
     ("Portal de Compras Públicas", ("ecustomize", "portal de compras publicas"), ("portaldecompraspublicas.com.br",)),
@@ -880,6 +881,10 @@ aside summary::-webkit-details-marker{display:none}
 .selo-p{display:inline-flex;align-items:center;font:800 12px var(--font);padding:3px 10px;border-radius:7px;color:#fff;white-space:nowrap;letter-spacing:.01em}
 .selo-mg{background:#c8102e;border:1px solid #e23a52}
 .selo-cld{background:#0e8ec9;border-color:#38b1e6}.selo-cld i{background:#fff;color:#0e8ec9}
+.custo{display:inline-block;font:700 10.5px var(--font);padding:1px 7px;border-radius:999px;vertical-align:1px;white-space:nowrap}
+.custo.gratis{color:#4ade80;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.35)}
+.custo.pago{color:#fb923c;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.4)}
+.selo-cbb{background:#fcfc30;border-color:#e6e600;color:#003da5}.selo-cbb i{background:#003da5;color:#fcfc30}
 .selo-cpp{background:#e56a17;border-color:#f08a3c}.selo-cpp i{background:#fff;color:#e56a17}
 .selo-csl{background:#1a8a43;border-color:#2fa85c}.selo-csl i{background:#fff;color:#1a8a43}
 .selo-cmg{background:#c8102e;border-color:#e23a52}.selo-cmg i{background:#fff;color:#c8102e}.selo-cmg em{color:#fff}
@@ -1255,7 +1260,7 @@ function raiz(w) {
   return w;
 }
 const CONSULTA = "https://score.sigalicita.com.br/?cnpj=";
-const MEUS = ["Compras.gov.br", "ComprasMG", "SISLOG", "Licitar Digital", "Portal de Compras Públicas"];
+const MEUS = ["Compras.gov.br", "ComprasMG", "SISLOG", "Licitar Digital", "Portal de Compras Públicas", "Licitações-e"];
 const UFS = [["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["BA","Bahia"],["CE","Ceará"],["DF","Distrito Federal"],["ES","Espírito Santo"],["GO","Goiás"],["MA","Maranhão"],["MT","Mato Grosso"],["MS","Mato Grosso do Sul"],["MG","Minas Gerais"],["PA","Pará"],["PB","Paraíba"],["PR","Paraná"],["PE","Pernambuco"],["PI","Piauí"],["RJ","Rio de Janeiro"],["RN","Rio Grande do Norte"],["RS","Rio Grande do Sul"],["RO","Rondônia"],["RR","Roraima"],["SC","Santa Catarina"],["SP","São Paulo"],["SE","Sergipe"],["TO","Tocantins"]];
 const MODS = [[6,"Pregão Eletrônico"],[8,"Dispensa"],[4,"Concorrência Eletrônica"],[7,"Pregão Presencial"],[5,"Concorrência Presencial"],[12,"Credenciamento"],[9,"Inexigibilidade"],[1,"Leilão Eletrônico"]];
 const PRAZOS = [["", "Qualquer prazo"], ["2", "Encerra em até 2 dias"], ["7", "Encerra em até 7 dias"], ["30", "Encerra em até 30 dias"]];
@@ -1322,10 +1327,17 @@ function filtrar() {
   });
 }
 
+// portais grátis e pagos para o fornecedor (os que o site não conhece ficam sem etiqueta)
+const CUSTO_PORTAL = {"Compras.gov.br": "gratis", "ComprasMG": "gratis", "SISLOG": "gratis", "Compras RJ": "gratis", "Banrisul (RS)": "gratis", "Licitações-e": "gratis",
+  "Licitar Digital": "pago", "Portal de Compras Públicas": "pago", "BLL Compras": "pago", "Licitanet": "pago", "BNC Compras": "pago"};
+function etiquetaCusto(p) {
+  const c = CUSTO_PORTAL[p];
+  return c ? `<span class="custo ${c}" title="${c === "pago" ? "Portal cobra do fornecedor para participar" : "Portal gratuito para o fornecedor"}">${c === "pago" ? "Pago" : "Grátis"}</span>` : "";
+}
 function desenharPortais() {
   const c = DADOS ? contar(DADOS.itens, "portal") : {};
   const outros = Object.keys(c).filter((p) => !MEUS.includes(p)).sort((a, b) => c[b] - c[a]);
-  const linha = (p, meu) => `<label class="opc${meu ? " meu" : ""}"><input type="checkbox" data-portal="${esc(p)}"${PREF.portais.includes(p) ? " checked" : ""}><span>${meu ? "★ " : ""}${esc(p)}</span><span class="n">${c[p] || 0}</span></label>`;
+  const linha = (p, meu) => `<label class="opc${meu ? " meu" : ""}"><input type="checkbox" data-portal="${esc(p)}"${PREF.portais.includes(p) ? " checked" : ""}><span>${meu ? "★ " : ""}${esc(p)} ${etiquetaCusto(p)}</span><span class="n">${c[p] || 0}</span></label>`;
   $("#f-portal").innerHTML =
     `<div class="sub">Meus portais</div>` + MEUS.map((p) => linha(p, true)).join("") +
     `<div style="display:flex;gap:12px;margin:6px 0 2px"><button type="button" class="mini-bt" data-sel="meus">Só os meus</button><button type="button" class="mini-bt" data-sel="todos">Todos</button></div>` +
@@ -1485,6 +1497,7 @@ function seloPortal(p) {
   if (p === "ComprasMG") return `<span class="selo-cg selo-cmg" title="Licitação do ComprasMG">${CARRINHO}<span>Compras<em>MG</em></span></span>`;
   if (p === "Licitar Digital") return `<span class="selo-cg selo-cld" title="Licitação do Licitar Digital">${CARRINHO}<span>Licitar Digital</span></span>`;
   if (p === "Portal de Compras Públicas") return `<span class="selo-cg selo-cpp" title="Licitação do Portal de Compras Públicas">${CARRINHO}<span>Portal de Compras Públicas</span></span>`;
+  if (p === "Licitações-e") return `<span class="selo-cg selo-cbb" title="Licitação do Licitações-e (Banco do Brasil)">${CARRINHO}<span>Licitações-e</span></span>`;
   if (p === "SISLOG") return `<span class="selo-cg selo-csl" title="Licitação do SISLOG">${CARRINHO}<span>SISLOG</span></span>`;
   const cor = {"ComprasMG": "selo-mg", "SISLOG": "selo-go", "Licitar Digital": "selo-ld"}[p];
   if (cor) return `<span class="selo-p ${cor}" title="Licitação do ${esc(p)}">${esc(p)}</span>`;
