@@ -902,7 +902,7 @@ aside summary::-webkit-details-marker{display:none}
 .lado .ate b.ok{color:var(--ink)}
 .acoes{grid-column:1 / -1;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
 .acoes a,.acoes button{font:600 13px var(--font);padding:6px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--ink);background:transparent;text-decoration:none;cursor:pointer}
-.acoes a.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.acoes a.pri{background:transparent;border-color:var(--accent);color:var(--accent)}
 .acoes a.pag{color:var(--gold);border-color:#7a5a12}
 .acoes button.salvar{color:var(--ink)}
 .acoes button.salvar.on{background:var(--gold);border-color:var(--gold);color:#241a00}
@@ -1402,7 +1402,7 @@ function cartao(x, emSalvas) {
       <div class="ate"><span>Propostas até</span><b class="${urg ? "" : "ok"}">${dataHora(x.encerramento)}</b></div>
     </div>
     <div class="acoes">
-      ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
+      ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">${x.portal === "Compras.gov.br" ? "ComprasGov" : esc(x.portal.length > 28 ? "Portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}
       ${x.cnpj ? htmlNota(x.cnpj) : ""}
       ${emSalvas ? `<button type="button" class="remover" data-salvar="${esc(x.id)}">🗑 Remover</button>`
@@ -1833,7 +1833,7 @@ async function paginaLicitacao(id) {
       <div><span>Publicado no PNCP</span><b>${dataSo(x.publicacao) || "—"}</b></div>
     </div>
     <div class="acoes">
-      ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">Abrir no ${esc(x.portal.length > 22 ? "portal" : x.portal)}</a>` : ""}
+      ${x.linkPortal ? `<a class="pri" href="${esc(x.linkPortal)}" target="_blank" rel="noopener">${x.portal === "Compras.gov.br" ? "ComprasGov" : esc(x.portal.length > 28 ? "Portal" : x.portal)}</a>` : ""}
       ${x.linkPncp ? `<a href="${esc(x.linkPncp)}" target="_blank" rel="noopener">Ver no PNCP (oficial)</a>` : ""}
       ${x.cnpj ? htmlNota(x.cnpj) : ""}
       <button type="button" data-cal="${esc(x.id)}">📅 Salvar no calendário</button>
