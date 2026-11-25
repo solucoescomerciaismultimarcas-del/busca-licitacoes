@@ -1380,12 +1380,12 @@ function cartao(x, emSalvas) {
   const urg = dias != null && dias <= 2;
   return `<article class="card${meu ? " meu" : ""}">
     <div class="tags">
-      ${x.numero ? `<span class="tag num">${esc(x.numero)}</span>` : ""}
+      ${x.numero || x.uasg ? `<span class="tag num">${esc(x.numero || "")}${x.numero && x.uasg ? " · " : ""}${x.uasg ? "UASG " + esc(x.uasg) : ""}</span>` : ""}
       <span class="tag mod">${esc(x.modalidadeNome)}</span>
       ${x.srp ? `<span class="tag srp">Registro de preços</span>` : ""}
       ${encerrada ? `<span class="tag encerrada">Encerrada</span>` : dias != null ? `<span class="tag prazo${urg ? " urg" : ""}">${textoPrazo(dias)}</span>` : ""}
       <span class="tag">📍 ${esc(x.uf)}</span>
-      ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
+      
       ${seloPortal(x.portal)}
       ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
       ${x.tipo === "Serviço" ? `<span class="tag">Serviço</span>` : ""}
@@ -1813,12 +1813,12 @@ async function paginaLicitacao(id) {
   alvo.innerHTML = `<a class="voltar" href="/">← Nova busca</a>
     <div>
       <div class="tags">
-        ${x.numero ? `<span class="tag num">${esc(x.numero)}</span>` : ""}
+        ${x.numero || x.uasg ? `<span class="tag num">${esc(x.numero || "")}${x.numero && x.uasg ? " · " : ""}${x.uasg ? "UASG " + esc(x.uasg) : ""}</span>` : ""}
         <span class="tag mod">${esc(x.modalidadeNome)}</span>
         ${x.srp ? `<span class="tag srp">Registro de preços</span>` : ""}
         ${dias != null && dias >= 0 ? `<span class="tag prazo${dias <= 2 ? " urg" : ""}">${textoPrazo(dias)}</span>` : ""}
         <span class="tag">📍 ${esc(x.uf)}</span>
-        ${x.uasg ? `<span class="tag">UASG ${esc(x.uasg)}</span>` : ""}
+        
         ${seloPortal(x.portal)}
         ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
         ${x.assistencia ? `<span class="tag assist">🔧 Exige assistência técnica</span>` : ""}
