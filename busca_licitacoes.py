@@ -872,7 +872,7 @@ aside summary::-webkit-details-marker{display:none}
 .tag.prazo.urg{color:var(--bad);border-color:#7a2f2f;background:var(--bad-bg)}
 .tag.portal{color:var(--muted)}
 .tag.portal.meu{color:var(--gold);border-color:#7a5a12;background:var(--gold-soft)}
-.tag.cat{color:#a8e3c8;border-color:#285a45;background:#11291f}
+.tag.cat{color:var(--muted);border-color:var(--line2);background:transparent}
 .tag.assist{color:#ffb4a8;border-color:#7a2f2f;background:var(--bad-bg);font-weight:700}
 .selo-cg{display:inline-flex;align-items:center;gap:6px;font:800 12px var(--font);padding:3px 10px 3px 4px;border-radius:7px;background:#1351b4;color:#fff;border:1px solid #2a6bd1;white-space:nowrap;letter-spacing:.01em}
 .selo-cg i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:#ffcd07;color:#0c326f;font-style:normal}
