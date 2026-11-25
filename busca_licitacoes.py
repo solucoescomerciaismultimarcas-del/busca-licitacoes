@@ -675,7 +675,7 @@ def _html_email(novas, urgentes, ufs, portais, palavras):
         link = SITE + "/licitacao?id=" + urllib.parse.quote(x["id"], safe="")
         return (f'<tr><td style="padding:12px 14px;border-bottom:1px solid #e3e8f0">'
                 f'<div style="font-size:12px;color:#5a6b80">{e(x["modalidadeNome"])} {e(x["numero"])} · UASG {e(x["uasg"])} · {e(x["portal"])} · {e(", ".join(x.get("categorias", [])))}'
-                + (' · <b style="color:#b3261e">🔧 Exige assistência técnica</b>' if x.get("assistencia") else "") + '</div>'
+                + '</div>'
                 f'<div style="font-weight:700;color:#0c326f;margin:2px 0">{e(x["orgao"])}</div>'
                 f'<div style="color:#14202e">{e(x["objeto"][:280])}</div>'
                 f'<div style="font-size:13px;margin-top:4px"><b>{valor}</b> · propostas até <b style="color:#b3261e">{prazo}</b> · '
@@ -866,14 +866,14 @@ aside summary::-webkit-details-marker{display:none}
 .tags{display:flex;gap:6px;flex-wrap:wrap;grid-column:1}
 .tag{font:600 12px var(--font);padding:3px 9px;border-radius:7px;border:1px solid var(--line2);color:var(--muted);background:var(--surf2);white-space:nowrap}
 .tag.num{font-family:var(--mono);color:var(--ink)}
-.tag.mod{color:#9cc8ff;border-color:#2b4a74;background:#12243d}
-.tag.srp{color:#c9a7ff;border-color:#4b3a74;background:#211a3d}
+.tag.mod{color:#9cc8ff;border-color:#2b4a74;background:transparent}
+.tag.srp{color:#c9a7ff;border-color:#4b3a74;background:transparent}
 .tag.prazo{color:var(--warn);border-color:#6e5317;background:transparent}
 .tag.prazo.urg{color:var(--bad);border-color:#7a2f2f;background:transparent}
 .tag.portal{color:var(--muted)}
 .tag.portal.meu{color:var(--gold);border-color:#7a5a12;background:var(--gold-soft)}
 .tag.cat{color:var(--muted);border-color:var(--line2);background:transparent}
-.tag.assist{color:#ffb4a8;border-color:#7a2f2f;background:var(--bad-bg);font-weight:700}
+.tag.assist{color:#ffb4a8;border-color:#7a2f2f;background:transparent;font-weight:700}
 .selo-cg{display:inline-flex;align-items:center;gap:6px;font:800 12px var(--font);padding:3px 10px 3px 4px;border-radius:7px;background:#1351b4;color:#fff;border:1px solid #2a6bd1;white-space:nowrap;letter-spacing:.01em}
 .selo-cg i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:#ffcd07;color:#0c326f;font-style:normal}
 .selo-cg i svg{display:block}
@@ -1390,7 +1390,6 @@ function cartao(x, emSalvas) {
       ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
       ${x.tipo === "Serviço" ? `<span class="tag">Serviço</span>` : ""}
       ${!emSalvas && achadaSoNosItens(x) ? `<span class="tag nos-itens" title="O produto que você procurou está na lista de itens desta licitação">🔎 nos itens</span>` : ""}
-      ${x.assistencia ? `<span class="tag assist" title="Eletrodoméstico ou objeto que fala em assistência técnica: confira as exigências no edital">🔧 Exige assistência técnica</span>` : ""}
     </div>
     <div class="corpo">
       <h3><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">${esc(x.orgao)}</a></h3>
@@ -1821,7 +1820,6 @@ async function paginaLicitacao(id) {
         
         ${seloPortal(x.portal)}
         ${(x.categorias || []).filter((k) => k !== "Outros").map((k) => `<span class="tag cat">${esc(k)}</span>`).join("")}
-        ${x.assistencia ? `<span class="tag assist">🔧 Exige assistência técnica</span>` : ""}
       </div>
       <h2>${esc(x.objeto)}</h2>
       <div class="org">${esc(x.orgao)} <small>· ${esc(x.unidade)}${x.municipio ? " · " + esc(x.municipio) + " - " + esc(x.uf) : ""}</small></div>
