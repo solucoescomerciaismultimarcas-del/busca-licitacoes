@@ -1691,6 +1691,9 @@ $("#f").addEventListener("submit", (e) => {
     const falhos = DADOS.erros.filter((u) => /^[A-Z]{2}$/.test(u));
     if (falhos.length) { buscarVarios(pedido, falhos, false); return; }
   }
+  // um estado só: se faltou alguma parte (PNCP pediu para esperar), "Buscar" tenta de novo
+  // (as modalidades que vieram certas ficam guardadas por 2 h, então só busca o que faltou)
+  if (DADOS.uf !== "BR" && DADOS.uf !== "MEUS" && !DADOS.guardada && DADOS.erros && DADOS.erros.length) return buscar();
   MOSTRAR = 40; desenhar();
 });
 $("#uf").addEventListener("change", () => { VER_SALVAS = false; buscar(); });
