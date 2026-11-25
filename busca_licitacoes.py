@@ -806,7 +806,7 @@ button{font-family:inherit}
 .busca{display:flex;gap:0;background:var(--surf);border:1px solid var(--line2);border-radius:999px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 .busca .q{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px;padding:0 18px}
 .busca .q svg{color:var(--dim);flex:none}
-.busca input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 16px var(--font);padding:15px 0}
+.busca input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 16px var(--font);padding:11px 0}
 .busca .q #limpa{flex:none;width:30px;height:30px;padding:0;border-radius:50%;background:transparent;color:var(--dim);font:400 24px/1 var(--font);cursor:pointer;display:flex;align-items:center;justify-content:center}
 .busca .q #limpa:hover{background:var(--surf2);color:var(--ink)}
 .busca .q #limpa[hidden]{display:none}
