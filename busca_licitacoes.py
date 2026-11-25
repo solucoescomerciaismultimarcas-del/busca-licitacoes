@@ -690,7 +690,7 @@ def _html_email(novas, urgentes, ufs, portais, palavras):
     filtro = f'{", ".join(portais) or "todos os portais"} · {", ".join(ufs)}' + (f' · palavras: {", ".join(palavras)}' if palavras else "")
     return (f'<div style="font-family:Arial,sans-serif;background:#f3f5f9;padding:20px;color:#14202e">'
             f'<div style="max-width:720px;margin:auto">'
-            f'<h1 style="font-size:20px;margin:0;color:#0c326f">Busca Licitações · resumo do dia</h1>'
+            f'<h1 style="font-size:20px;margin:0;color:#0c326f">SigaLicita · resumo do dia</h1>'
             f'<div style="color:#5a6b80;font-size:13px">{e(filtro)}</div>'
             + bloco("🆕 Novas nas últimas 24 horas", novas, "Nenhuma licitação nova hoje.")
             + bloco("⚠ Encerram nos próximos 2 dias", urgentes, "Nenhuma encerrando nos próximos 2 dias.")
@@ -744,7 +744,7 @@ def enviar_email(assunto, html):
     para = os.environ.get("ALERTA_EMAIL", "")
     if not chave or not para:
         raise RuntimeError("Faltam RESEND_API_KEY ou ALERTA_EMAIL nas configurações do Render.")
-    corpo = json.dumps({"from": "Busca Licitações <onboarding@resend.dev>", "to": [para],
+    corpo = json.dumps({"from": "SigaLicita <onboarding@resend.dev>", "to": [para],
                         "subject": assunto, "html": html}).encode("utf-8")
     req = urllib.request.Request("https://api.resend.com/emails", data=corpo, method="POST",
                                  headers={"Authorization": "Bearer " + chave, "Content-Type": "application/json",
@@ -757,7 +757,7 @@ def tarefa_email():
     _envio["rodando"] = True
     try:
         novas, urgentes, ufs, portais, palavras = montar_resumo()
-        assunto = f"Busca Licitações: {len(novas)} nova{'s' if len(novas) != 1 else ''} · {len(urgentes)} encerrando em 2 dias ({', '.join(ufs)})"
+        assunto = f"SigaLicita: {len(novas)} nova{'s' if len(novas) != 1 else ''} · {len(urgentes)} encerrando em 2 dias ({', '.join(ufs)})"
         enviar_email(assunto, _html_email(novas, urgentes, ufs, portais, palavras))
         _envio["ultimo"] = time.strftime("%d/%m/%Y %H:%M") + f" · enviado ({len(novas)} novas, {len(urgentes)} urgentes)"
         _envio["dia"] = time.strftime("%Y-%m-%d")
