@@ -690,7 +690,8 @@ def _html_email(novas, urgentes, ufs, portais, palavras):
     filtro = f'{", ".join(portais) or "todos os portais"} · {", ".join(ufs)}' + (f' · palavras: {", ".join(palavras)}' if palavras else "")
     return (f'<div style="font-family:Arial,sans-serif;background:#f3f5f9;padding:20px;color:#14202e">'
             f'<div style="max-width:720px;margin:auto">'
-            f'<h1 style="font-size:20px;margin:0;color:#0c326f">SigaLicita · resumo do dia</h1>'
+            f'<img src="{SITE}/logo-email.png" alt="SigaLicita" width="193" height="60" style="display:block;border:0;height:60px;width:auto;margin:0 0 6px -6px;font:700 22px Arial,sans-serif;color:#0c326f">'
+            f'<div style="font-size:17px;font-weight:700;color:#0c326f;margin:0 0 2px">Resumo do dia</div>'
             f'<div style="color:#5a6b80;font-size:13px">{e(filtro)}</div>'
             + bloco("🆕 Novas nas últimas 24 horas", novas, "Nenhuma licitação nova hoje.")
             + bloco("⚠ Encerram nos próximos 2 dias", urgentes, "Nenhuma encerrando nos próximos 2 dias.")
@@ -1942,7 +1943,7 @@ import hashlib
 import hmac
 
 COOKIE_ACESSO = "sl_acesso"
-ABERTOS_SEM_SENHA = ("/entrar", "/sair", "/tarefa/email")
+ABERTOS_SEM_SENHA = ("/entrar", "/sair", "/tarefa/email", "/logo-email.png")
 
 
 def _senha_site():
@@ -2117,6 +2118,17 @@ class Handler(BaseHTTPRequestHandler):
         if _host(self).endswith(".onrender.com") and u.path in ("/", "/index.html", "/licitacao"):
             return _redirecionar(self, "https://sigalicita.com.br" + self.path)
         if _tratar_entrar_sair(self) or _barrar_sem_senha(self, u.path):
+            return
+        if u.path == "/logo-email.png":
+            import base64, re
+            m = re.search(r'class="marca marca-clara" src="data:image/png;base64,([^"]+)"', PAGINA)
+            dados = base64.b64decode(m.group(1))
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(dados)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(dados)
             return
         if u.path == "/diagnostico":
             try:
