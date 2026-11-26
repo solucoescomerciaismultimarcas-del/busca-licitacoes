@@ -339,7 +339,7 @@ def _padrao(palavra):
 _CAT_RE = [(nome, re.compile(r"(?<![a-z])(?:" + "|".join(_padrao(x) for x in palavras) + ")")) for nome, palavras in CATEGORIAS]
 
 
-SERVICO = ["prestacao de servico", "prestacao de servicos", "servicos de", "servico de", "servicos continuos", "mao de obra",
+SERVICO = ["prestacao de servico", "prestacao de servicos", "servicos de", "servico de", "servico para", "servicos para", "contratacao de servico", "contratacao de servicos", "servicos continuos", "mao de obra",
            "obra", "obras", "reforma", "pavimentacao", "pavimento", "recapeamento", "engenharia", "execucao de", "terceirizacao",
            "terceirizado", "vigilancia", "consultoria", "assessoria", "locacao", "manutencao preventiva", "manutencao corretiva",
            "manutencao predial", "limpeza e conservacao", "transporte de", "custodia", "auditoria", "treinamento", "capacitacao",
@@ -355,7 +355,7 @@ def tipo_de(texto):
     t = sem_acento(texto)
     if _SERV_RE.search(t):
         # "aquisição de peças... incluindo instalação" continua produto; "prestação de serviços... e fornecimento de peças" é serviço
-        if _PROD_RE.search(t) and not re.search(r"(?<![a-z])(prestacao de servic|servicos? de|mao de obra|obras?|reforma|pavimenta|engenharia|locacao|terceiriza|vigilancia|consultoria|assessoria)", t):
+        if _PROD_RE.search(t) and not re.search(r"(?<![a-z])(prestacao de servic|contratacao de servic|servicos? (?:de|para)|mao de obra|obras?|reforma|pavimenta|engenharia|locacao|terceiriza|vigilancia|consultoria|assessoria)", t):
             return "Produto"
         return "Serviço"
     return "Produto"
@@ -1140,7 +1140,7 @@ function padraoP(w) { w = w.trim(); const p = escRe(w); return w.length <= 6 ? p
 const CAT_RE = CFG.categorias.map(([n, ws]) => [n, new RegExp("(?<![a-z])(?:" + ws.map(padraoP).join("|") + ")")]);
 const SERV_RE = new RegExp("(?<![a-z])(?:" + CFG.servico.map(escRe).join("|") + ")(?![a-z])");
 const PROD_RE = new RegExp("(?<![a-z])(?:" + CFG.produto.map(escRe).join("|") + ")");
-const FORTE_RE = /(?<![a-z])(prestacao de servic|servicos? de|mao de obra|obras?|reforma|pavimenta|engenharia|locacao|terceiriza|vigilancia|consultoria|assessoria)/;
+const FORTE_RE = /(?<![a-z])(prestacao de servic|contratacao de servic|servicos? (?:de|para)|mao de obra|obras?|reforma|pavimenta|engenharia|locacao|terceiriza|vigilancia|consultoria|assessoria)/;
 function categoriasDe(t) { t = semAc(t).replaceAll("mao de obra", "mao-de-servico"); const c = CAT_RE.filter(([, rx]) => rx.test(t)).map(([n]) => n); return c.length ? c : ["Outros"]; }
 function tipoDe(t) { t = semAc(t); if (SERV_RE.test(t)) return PROD_RE.test(t) && !FORTE_RE.test(t) ? "Produto" : "Serviço"; return "Produto"; }
 function portalDe(c) {
