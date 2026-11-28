@@ -976,7 +976,6 @@ aside summary::-webkit-details-marker{display:none}
 .txt{margin:0;color:var(--ink);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
 .marcar-item{display:block;margin:6px auto 0;width:17px;height:17px;accent-color:var(--gold);cursor:pointer}
 tr.escolhido td{background:var(--gold-soft)}
-.meus-itens{font-size:12.5px;color:var(--gold);margin-top:6px;font-weight:600}
 .copiar{font:600 11px var(--font);padding:2px 8px;border-radius:6px;background:transparent;border:1px solid var(--line2);color:var(--accent);margin-left:6px;cursor:pointer;white-space:nowrap}
 .copiar:hover{border-color:var(--accent)}
 .copiar.ok{color:#4ade80;border-color:currentColor}
@@ -1424,7 +1423,6 @@ function cartao(x, emSalvas) {
       <h3><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">${esc(x.orgao)}</a></h3>
       <p class="obj"><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener" title="Abrir a página da licitação">${esc(x.objeto)}</a></p>
       <div class="loc">${esc([x.municipio, x.uf].filter(Boolean).join(" · "))}${x.unidade ? " · " + esc(x.unidade) : ""}</div>
-      ${emSalvas && (x.meusItens || []).length ? `<div class="meus-itens">✔ Meus itens: ${x.meusItens.map((m) => `${esc(m.n)} – ${esc(String(m.descricao || "").slice(0, 60))}${String(m.descricao || "").length > 60 ? "…" : ""}`).join(" · ")}</div>` : ""}
     </div>
     <div class="lado">
       <div><span>Valor estimado</span><b>${brl(x.valor)}</b></div>
