@@ -1889,6 +1889,7 @@ async function paginaLicitacao(id) {
       if (SALVAS[x.id]) {
         delete SALVAS[x.id];
         alvo.querySelectorAll(".marcar-item:checked").forEach((c) => { c.checked = false; c.closest("tr").classList.remove("escolhido"); });
+        const si = alvo.querySelector("#sec-itens"); if (si && si.redesenhar) si.redesenhar(false);
       } else { const y = Object.assign({}, x, {salvaEm: Date.now()}); delete y.complemento; SALVAS[x.id] = y; }
       guardarSalvas();
       bs.outerHTML = botaoSalvarDet(x.id);
@@ -1913,12 +1914,16 @@ async function paginaLicitacao(id) {
   alvo.querySelector("#sec-docs").innerHTML = `<h3>Documentos do edital (${d.arquivos.length})</h3>` +
     (d.erros && d.erros.length ? `<div class="aviso">O PNCP não respondeu para ${esc(d.erros.join("; "))}.</div>` : "") + docs;
   if (d.itens.length) {
-    const sec = alvo.querySelector("#sec-itens"), tot = d.itens.reduce((s, i) => s + (i.vt || 0), 0);
+    const sec = alvo.querySelector("#sec-itens");
     sec.hidden = false;
-    const escolhidos = new Set(((SALVAS[x.id] || {}).meusItens || []).map((m) => String(m.n)));
-    sec.innerHTML = `<h3>Itens da contratação (${d.itens.length})</h3><div class="tw"><table><thead><tr><th>Item</th><th style="text-align:left">Descrição</th><th>Un.</th><th>Qtd</th><th>Valor unit.</th><th>Valor total</th></tr></thead><tbody>` +
-      d.itens.map((i) => `<tr${escolhidos.has(String(i.n)) ? ' class="escolhido"' : ""}><td>${esc(i.n)}<input type="checkbox" class="marcar-item" data-item="${esc(i.n)}"${escolhidos.has(String(i.n)) ? " checked" : ""} title="Marque os itens em que você vai participar" aria-label="Participar do item ${esc(i.n)}"></td><td class="d">${esc(i.descricao)}${i.tipo ? `<span class="tipo">${esc(i.tipo)}</span>` : ""}<button type="button" class="copiar" data-t="${esc(i.descricao)}" title="Copiar a descrição deste item">📋 Copiar</button>${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${esc(i.un)}</td><td>${qtd(i.qtd)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
-      `</tbody>${tot ? `<tfoot><tr><td colspan="5">Total estimado dos itens</td><td>${brl(tot)}</td></tr></tfoot>` : ""}</table></div>`;
+    sec.redesenhar = (so) => {
+      const escolhidos = new Set(((SALVAS[x.id] || {}).meusItens || []).map((m) => String(m.n)));
+      const lista = so ? d.itens.filter((i) => escolhidos.has(String(i.n))) : d.itens, tot = lista.reduce((s, i) => s + (i.vt || 0), 0);
+      sec.innerHTML = `<h3>${so ? `Meus itens (${lista.length} de ${d.itens.length})` : `Itens da contratação (${d.itens.length})`}</h3><div class="tw"><table><thead><tr><th>Item</th><th style="text-align:left">Descrição</th><th>Un.</th><th>Qtd</th><th>Valor unit.</th><th>Valor total</th></tr></thead><tbody>` +
+        lista.map((i) => `<tr${!so && escolhidos.has(String(i.n)) ? ' class="escolhido"' : ""}><td>${esc(i.n)}${so ? "" : `<input type="checkbox" class="marcar-item" data-item="${esc(i.n)}"${escolhidos.has(String(i.n)) ? " checked" : ""} title="Marque os itens em que você vai participar" aria-label="Participar do item ${esc(i.n)}">`}</td><td class="d">${esc(i.descricao)}${i.tipo ? `<span class="tipo">${esc(i.tipo)}</span>` : ""}<button type="button" class="copiar" data-t="${esc(i.descricao)}" title="Copiar a descrição deste item">📋 Copiar</button>${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${esc(i.un)}</td><td>${qtd(i.qtd)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
+        `</tbody>${tot ? `<tfoot><tr><td colspan="5">${so ? "Total dos meus itens" : "Total estimado dos itens"}</td><td>${brl(tot)}</td></tr></tfoot>` : ""}</table></div>`;
+    };
+    sec.redesenhar(!!((SALVAS[x.id] || {}).meusItens || []).length);
     sec.addEventListener("change", (e) => {
       if (!e.target.matches(".marcar-item")) return;
       e.target.closest("tr").classList.toggle("escolhido", e.target.checked);
