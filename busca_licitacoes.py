@@ -1527,7 +1527,7 @@ function etiquetaCusto(p) {
 function desenharPortais() {
   const c = DADOS ? contar(DADOS.itens, "portal") : {};
   const outros = Object.keys(c).filter((p) => !MEUS.includes(p)).sort((a, b) => c[b] - c[a]);
-  const linha = (p, meu) => `<label class="opc${meu ? " meu" : ""}"><input type="checkbox" data-portal="${esc(p)}"${PREF.portais.includes(p) ? " checked" : ""}><span>${meu ? "★ " : ""}${esc(p)}</span><span class="n">${c[p] || 0}</span></label>`;
+  const linha = (p, meu) => `<label class="opc${meu ? " meu" : ""}"><input type="checkbox" data-portal="${esc(p)}"${PREF.portais.includes(p) ? " checked" : ""}><span>${esc(p)}</span><span class="n">${c[p] || 0}</span></label>`;
   $("#f-portal").innerHTML =
     `<div class="sub">Meus portais</div>` + MEUS.map((p) => linha(p, true)).join("") +
     `<div style="display:flex;gap:12px;margin:6px 0 2px"><button type="button" class="mini-bt" data-sel="meus">Só os meus</button><button type="button" class="mini-bt" data-sel="todos">Todos</button></div>` +
