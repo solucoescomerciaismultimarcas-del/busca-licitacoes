@@ -974,6 +974,9 @@ aside summary::-webkit-details-marker{display:none}
 .dados b{font-weight:600;font-size:13.5px;overflow-wrap:anywhere}
 .dados b.m{font-family:var(--mono);font-size:12.5px}
 .txt{margin:0;color:var(--ink);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.marcar-item{display:block;margin:6px auto 0;width:17px;height:17px;accent-color:var(--gold);cursor:pointer}
+tr.escolhido td{background:var(--gold-soft)}
+.meus-itens{font-size:12.5px;color:var(--gold);margin-top:6px;font-weight:600}
 .copiar{font:600 11px var(--font);padding:2px 8px;border-radius:6px;background:transparent;border:1px solid var(--line2);color:var(--accent);margin-left:6px;cursor:pointer;white-space:nowrap}
 .copiar:hover{border-color:var(--accent)}
 .copiar.ok{color:#4ade80;border-color:currentColor}
@@ -1421,6 +1424,7 @@ function cartao(x, emSalvas) {
       <h3><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">${esc(x.orgao)}</a></h3>
       <p class="obj"><a href="/licitacao?id=${encodeURIComponent(x.id)}" target="_blank" rel="noopener" title="Abrir a página da licitação">${esc(x.objeto)}</a></p>
       <div class="loc">${esc([x.municipio, x.uf].filter(Boolean).join(" · "))}${x.unidade ? " · " + esc(x.unidade) : ""}</div>
+      ${emSalvas && (x.meusItens || []).length ? `<div class="meus-itens">✔ Meus itens: ${x.meusItens.map((m) => `${esc(m.n)} – ${esc(String(m.descricao || "").slice(0, 60))}${String(m.descricao || "").length > 60 ? "…" : ""}`).join(" · ")}</div>` : ""}
     </div>
     <div class="lado">
       <div><span>Valor estimado</span><b>${brl(x.valor)}</b></div>
@@ -1457,7 +1461,7 @@ function alternarSalva(id) {
 }
 function botaoSalvarDet(id) {
   return SALVAS[id]
-    ? `<button type="button" class="salvar on" data-salvar-det="1" title="Clique para tirar das Oportunidades">⭐ Salva nas Oportunidades</button>`
+    ? `<button type="button" class="salvar on" data-salvar-det="1" title="Clique para tirar das Oportunidades">⭐ Salva nas Oportunidades${(SALVAS[id].meusItens || []).length ? ` (${SALVAS[id].meusItens.length} ${SALVAS[id].meusItens.length === 1 ? "item" : "itens"})` : ""}</button>`
     : `<button type="button" class="salvar" data-salvar-det="1" title="Guardar em Oportunidades para analisar depois">☆ Salvar</button>`;
 }
 // salvou em outra aba (na página da licitação): a busca atualiza o número e os botões sozinha
@@ -1882,8 +1886,10 @@ async function paginaLicitacao(id) {
     const bc = e.target.closest("[data-copiar]"), bk = e.target.closest("[data-cal]"), bs = e.target.closest("[data-salvar-det]");
     if (bk) salvarCalendario(x);
     if (bs) {
-      if (SALVAS[x.id]) delete SALVAS[x.id];
-      else { const y = Object.assign({}, x, {salvaEm: Date.now()}); delete y.complemento; SALVAS[x.id] = y; }
+      if (SALVAS[x.id]) {
+        delete SALVAS[x.id];
+        alvo.querySelectorAll(".marcar-item:checked").forEach((c) => { c.checked = false; c.closest("tr").classList.remove("escolhido"); });
+      } else { const y = Object.assign({}, x, {salvaEm: Date.now()}); delete y.complemento; SALVAS[x.id] = y; }
       guardarSalvas();
       bs.outerHTML = botaoSalvarDet(x.id);
     }
@@ -1909,9 +1915,20 @@ async function paginaLicitacao(id) {
   if (d.itens.length) {
     const sec = alvo.querySelector("#sec-itens"), tot = d.itens.reduce((s, i) => s + (i.vt || 0), 0);
     sec.hidden = false;
+    const escolhidos = new Set(((SALVAS[x.id] || {}).meusItens || []).map((m) => String(m.n)));
     sec.innerHTML = `<h3>Itens da contratação (${d.itens.length})</h3><div class="tw"><table><thead><tr><th>Item</th><th style="text-align:left">Descrição</th><th>Un.</th><th>Qtd</th><th>Valor unit.</th><th>Valor total</th></tr></thead><tbody>` +
-      d.itens.map((i) => `<tr><td>${esc(i.n)}</td><td class="d">${esc(i.descricao)}${i.tipo ? `<span class="tipo">${esc(i.tipo)}</span>` : ""}<button type="button" class="copiar" data-t="${esc(i.descricao)}" title="Copiar a descrição deste item">📋 Copiar</button>${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${esc(i.un)}</td><td>${qtd(i.qtd)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
+      d.itens.map((i) => `<tr${escolhidos.has(String(i.n)) ? ' class="escolhido"' : ""}><td>${esc(i.n)}<input type="checkbox" class="marcar-item" data-item="${esc(i.n)}"${escolhidos.has(String(i.n)) ? " checked" : ""} title="Marque os itens em que você vai participar" aria-label="Participar do item ${esc(i.n)}"></td><td class="d">${esc(i.descricao)}${i.tipo ? `<span class="tipo">${esc(i.tipo)}</span>` : ""}<button type="button" class="copiar" data-t="${esc(i.descricao)}" title="Copiar a descrição deste item">📋 Copiar</button>${i.me && !/sem benef|nao se aplica|não se aplica/i.test(i.me) ? `<small>${esc(i.me)}</small>` : ""}</td><td>${esc(i.un)}</td><td>${qtd(i.qtd)}</td><td>${i.vu != null ? brl(i.vu) : "—"}</td><td>${i.vt != null ? brl(i.vt) : "—"}</td></tr>`).join("") +
       `</tbody>${tot ? `<tfoot><tr><td colspan="5">Total estimado dos itens</td><td>${brl(tot)}</td></tr></tfoot>` : ""}</table></div>`;
+    sec.addEventListener("change", (e) => {
+      if (!e.target.matches(".marcar-item")) return;
+      e.target.closest("tr").classList.toggle("escolhido", e.target.checked);
+      const marcados = [...sec.querySelectorAll(".marcar-item:checked")].map((c) => String(c.dataset.item));
+      if (!SALVAS[x.id]) { const y = Object.assign({}, x, {salvaEm: Date.now()}); delete y.complemento; SALVAS[x.id] = y; }
+      SALVAS[x.id].meusItens = d.itens.filter((i) => marcados.includes(String(i.n)))
+        .map((i) => ({n: i.n, descricao: i.descricao, un: i.un, qtd: i.qtd, vu: i.vu, vt: i.vt}));
+      guardarSalvas();
+      const b = alvo.querySelector("[data-salvar-det]"); if (b) b.outerHTML = botaoSalvarDet(x.id);
+    });
   }
 }
 
