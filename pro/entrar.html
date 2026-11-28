@@ -1,0 +1,17 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Entrar · SigaLicita Pro</title>
+<script>try{if(localStorage.getItem("pro_tema")==="claro")document.documentElement.setAttribute("data-theme","light")}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/estilo.css"></head><body>
+<div class="login"><form class="caixa" method="post" action="/entrar">
+<button class="tema" type="button" id="tema" aria-label="Trocar versão clara ou escura" title="Versão clara / escura"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<div class="marca"><img class="logo-escura" src="/logo.png" alt="SigaLicita"><img class="logo-clara" src="/logo-clara.png" alt="SigaLicita"><span class="pro">PRO</span></div>
+<p>Todas as ferramentas do licitante num lugar só.</p>
+{{AVISO}}
+<label for="email">E-mail</label><input id="email" name="email" type="email" autocomplete="username" value="{{EMAIL}}" required>
+<label for="senha">Senha</label><input id="senha" name="senha" type="password" autocomplete="current-password" required>
+<button class="btn" type="submit">Entrar</button>
+<div class="links"><a href="#" onclick="alert('Por enquanto, fale com o suporte para trocar a senha.');return false">Esqueci a senha</a><a href="#" onclick="alert('O cadastro de novas contas abre em breve.');return false">Criar conta</a></div>
+</form></div>
+<script src="/tema.js"></script>
+</body></html>
