@@ -674,13 +674,32 @@ def lista_pdm():
     return _PDM
 
 
+# palavras do dia a dia que o catálogo do governo escreve de outro jeito
+SINONIMOS = {"geriatrica": "adulto", "geriatrico": "adulto", "infantil": "infantil", "pc": "computador",
+             "celular": "smartphone", "a4": "a4"}
+
+
+def _raiz(p):
+    """Tira o plural simples, para "fraldas geriátricas" achar "fralda geriátrica"."""
+    if len(p) > 4 and p.endswith("oes"):
+        return p[:-3]
+    if len(p) > 4 and p.endswith("es") and p[-3] in "rzl":
+        return p[:-2]
+    if len(p) > 3 and p.endswith("s"):
+        return p[:-1]
+    return p
+
+
 def procurar_pdm(texto):
     """Produtos do catálogo cujo nome tem as palavras digitadas. Se nenhum nome tiver todas,
     tenta com menos palavras (as que sobram filtram a descrição de cada compra)."""
-    palavras = sem_acento(texto).split()
+    palavras = [SINONIMOS.get(_raiz(p), _raiz(p)) for p in sem_acento(texto).split()]
+    iguais = [cod for cod, _, sa in lista_pdm() if sa == " ".join(palavras)]
+    if iguais:  # o nome digitado é exatamente um produto do catálogo: usa só ele
+        return iguais
     for k in range(len(palavras), 0, -1):
         achados = [(0 if sa.startswith(" ".join(palavras[:k])) else 1, cod) for cod, nome, sa in lista_pdm()
-                   if all(p in sa.split() or (len(p) >= 4 and p in sa) for p in palavras[:k])]
+                   if all(p in sa.split() or (len(p) >= 4 and p in sa) or any(w.startswith(p) for w in sa.split()) for p in palavras[:k])]
         if achados:
             achados.sort()
             return [c for _, c in achados[:25]]
@@ -689,7 +708,7 @@ def procurar_pdm(texto):
 
 def gasto_pdm(texto):
     """Compras registradas para os produtos com as palavras digitadas, já somadas para os gráficos."""
-    palavras = sem_acento(texto).split()
+    palavras = [SINONIMOS.get(_raiz(p), _raiz(p)) for p in sem_acento(texto).split()]
     if not palavras or len(" ".join(palavras)) < 3:
         raise ValueError("Digite o nome do produto.")
     codigos = [str(c) for c in procurar_pdm(texto)]
@@ -725,39 +744,54 @@ def gasto_pdm(texto):
         for d in ex.map(pagina, pedidos):
             linhas += d.get("resultado") or []
 
-    # a API devolve todos os anos: o gráfico mostra ano a ano; os rankings e preços usam só os últimos 12 meses
-    por_ano, por_uf, por_orgao, por_item, compras = {}, {}, {}, {}, set()
-    total = qtd_total = total_geral = 0.0
-    for r in linhas:
-        desc = sem_acento(r.get("descricaoItem") or "")
-        if not all(p in desc for p in palavras):
-            continue
-        q, pu = float(r.get("quantidade") or 0), float(r.get("precoUnitario") or 0)
-        v = q * pu
-        data = str(r.get("dataCompra") or "")
-        if v <= 0 or not data:
-            continue
-        total_geral += v
-        por_ano[data[:4]] = por_ano.get(data[:4], 0) + v
-        if data < inicio:
-            continue
-        total += v
-        qtd_total += q
-        compras.add(r.get("idCompra"))
-        uf = r.get("estado") or "—"
-        por_uf[uf] = por_uf.get(uf, 0) + v
-        org = (r.get("nomeOrgao") or r.get("nomeUasg") or "—").strip()
-        o = por_orgao.setdefault(org, {"nome": org, "uf": uf, "valor": 0.0, "compras": set()})
-        o["valor"] += v
-        o["compras"].add(r.get("idCompra"))
-        if o["uf"] != uf:
-            o["uf"] = "vários estados"
-        cod = r.get("codigoItemCatalogo")
-        it = por_item.setdefault(cod, {"codigo": cod, "descricao": (r.get("descricaoItem") or "").strip(),
-                                        "unidade": r.get("siglaUnidadeFornecimento") or "", "valor": 0.0, "qtd": 0.0, "precos": []})
-        it["valor"] += v
-        it["qtd"] += q
-        it["precos"].append(pu)
+    # se nenhuma compra tiver todas as palavras na descrição, tenta sem as palavras que não aparecem
+    nomes_pdm = " ".join(sa for c, _, sa in lista_pdm() if str(c) in codigos)
+    tentativas = [palavras]
+    sobra = [p for p in palavras if p in nomes_pdm]
+    if sobra and sobra != palavras:
+        tentativas.append(sobra)
+    aviso = ""
+    for palavras_desc in tentativas:
+        # a API devolve todos os anos: o gráfico mostra ano a ano; os rankings e preços usam só os últimos 12 meses
+        por_ano, por_uf, por_orgao, por_item, compras = {}, {}, {}, {}, set()
+        total = qtd_total = total_geral = 0.0
+        for r in linhas:
+            desc = sem_acento(r.get("descricaoItem") or "")
+            if not all(p in desc for p in palavras_desc):
+                continue
+            q, pu = float(r.get("quantidade") or 0), float(r.get("precoUnitario") or 0)
+            v = q * pu
+            data = str(r.get("dataCompra") or "")
+            if v <= 0 or not data:
+                continue
+            total_geral += v
+            por_ano[data[:4]] = por_ano.get(data[:4], 0) + v
+            if data < inicio:
+                continue
+            total += v
+            qtd_total += q
+            compras.add(r.get("idCompra"))
+            uf = r.get("estado") or "—"
+            por_uf[uf] = por_uf.get(uf, 0) + v
+            org = (r.get("nomeOrgao") or r.get("nomeUasg") or "—").strip()
+            o = por_orgao.setdefault(org, {"nome": org, "uf": uf, "valor": 0.0, "compras": set()})
+            o["valor"] += v
+            o["compras"].add(r.get("idCompra"))
+            if o["uf"] != uf:
+                o["uf"] = "vários estados"
+            cod = r.get("codigoItemCatalogo")
+            it = por_item.setdefault(cod, {"codigo": cod, "descricao": (r.get("descricaoItem") or "").strip(),
+                                            "unidade": r.get("siglaUnidadeFornecimento") or "", "valor": 0.0, "qtd": 0.0, "precos": []})
+            it["valor"] += v
+            it["qtd"] += q
+            it["precos"].append(pu)
+
+        if compras:
+            if palavras_desc is not palavras:
+                fora = [p for p in palavras if p not in palavras_desc]
+                aviso = ("As compras do governo não usam a palavra " + ", ".join(f'"{p}"' for p in fora) +
+                         ": mostrando tudo de " + " ".join(palavras_desc) + ".")
+            break
 
     def resumo_precos(ps):
         ps = sorted(ps)
@@ -771,7 +805,7 @@ def gasto_pdm(texto):
     for o in orgaos:
         o["compras"] = len(o["compras"])
     nome = texto.strip()
-    res = {"codigo": codigo, "nome": nome, "desde": inicio, "total": total, "qtd": qtd_total, "total_geral": total_geral,
+    res = {"codigo": codigo, "nome": nome, "aviso": aviso, "desde": inicio, "total": total, "qtd": qtd_total, "total_geral": total_geral,
            "registros": len(linhas), "compras": len(compras), "cortado": cortado,
            "anos": sorted(por_ano.items()), "ufs": sorted(por_uf.items(), key=lambda x: -x[1]),
            "orgaos": orgaos, "itens": itens}
@@ -1059,6 +1093,10 @@ aside summary::-webkit-details-marker{display:none}
 .salvar-todas:hover{background:var(--gold);color:#241a00}
 .salvar-todas.feito{cursor:default;opacity:.8}
 .salvar-todas.feito:hover{background:transparent;color:var(--gold)}
+.salvar-todas.ic{display:inline-flex;align-items:center;gap:6px;padding:6px 12px}
+.salvar-todas.ic.feito{padding:6px 9px}
+.salvar-todas.ic svg{width:18px;height:18px}
+.salvar-todas.ic b{font-size:13px}
 .ja-salva{display:inline-flex;align-items:center;font:700 13px var(--font);padding:6px 12px;border-radius:8px;color:var(--gold);background:var(--gold-soft);border:1px solid #7a5a12;cursor:default}
 .conta{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);white-space:nowrap}
 .conta b{color:var(--ink);font-weight:700}
@@ -1634,8 +1672,8 @@ window.addEventListener("storage", (e) => {
 function botaoSalvarTodas(lista) {
   if (!lista.length) return "";
   const faltam = lista.filter((x) => !SALVAS[x.id]).length;
-  if (!faltam) return `<span class="salvar-todas feito" title="Todas desta busca já estão nas Oportunidades">⭐ Todas salvas</span>`;
-  return `<button type="button" class="salvar-todas" data-salvar-todas="1" title="Guardar todas desta busca em Oportunidades">⭐ Salvar todas (${faltam.toLocaleString("pt-BR")})</button>`;
+  if (!faltam) return `<span class="salvar-todas ic feito" title="Todas desta busca já estão nas Oportunidades" aria-label="Todas salvas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M10.5 3.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L2.7 9.2l5.4-.8z"/><path d="M16 19l2 2 4-4"/></svg></span>`;
+  return `<button type="button" class="salvar-todas ic" data-salvar-todas="1" title="Salvar todas desta busca (${faltam.toLocaleString("pt-BR")}) nas Oportunidades" aria-label="Salvar todas nas Oportunidades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M10.5 3.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L2.7 9.2l5.4-.8z"/><path d="M19 15v6M16 18h6"/></svg><b>${faltam.toLocaleString("pt-BR")}</b></button>`;
 }
 function salvarTodas() {
   const novas = filtrar().filter((x) => !SALVAS[x.id]);
@@ -2103,6 +2141,7 @@ function brlCurto(v) {
   if (v >= 1e3) return "R$ " + (v / 1e3).toLocaleString("pt-BR", {maximumFractionDigits: 0}) + " mil";
   return brl(v);
 }
+function sem_acentoLen(q) { return semAc(q).replace(/\s+/g, "").length; }
 async function paginaGastos() {
   document.querySelector("#f").hidden = true;
   document.querySelector(".grade").hidden = true;
@@ -2115,11 +2154,14 @@ async function paginaGastos() {
     <form class="g-busca" id="g-f"><input id="g-q" placeholder="Ex.: caneta esferográfica, ventilador, notebook" autocomplete="off"><button type="submit">Pesquisar</button></form>
     <div id="g-res" style="display:grid;gap:16px"></div>`;
   const res = alvo.querySelector("#g-res");
+  let pedidoG = 0, esperaG = null;
   async function mostrar(q) {
+    const meu = ++pedidoG;
     res.innerHTML = `<div class="carregando"><div class="spin"></div>Somando as compras no Compras.gov.br… pode levar até 1 minuto.</div>`;
     let d;
     try { const r = await fetch(`/api/gasto?q=${encodeURIComponent(q)}`); d = await r.json(); if (!r.ok) throw new Error(d.erro); }
-    catch (e) { res.innerHTML = `<div class="erro"><b>Não deu para somar.</b> ${esc(e.message || "")}</div>`; return; }
+    catch (e) { if (meu !== pedidoG) return; res.innerHTML = `<div class="erro"><b>Não deu para somar.</b> ${esc(e.message || "")}</div>`; return; }
+    if (meu !== pedidoG) return;  // já digitou outra coisa
     if (!d.compras) { res.innerHTML = `<div class="aviso">Não achei compras de "${esc(q)}" nos últimos 12 meses. Tente outra palavra, por exemplo no singular ou só o nome principal do produto.</div>`; return; }
     const maxA = Math.max(...d.anos.map((a) => a[1])), maxU = d.ufs[0][1], maxO = d.orgaos[0].valor;
     const lin = (n, v, max, extra) => `<div class="g-lin"><span class="n" title="${esc(n)}">${esc(n)}</span><span class="b"><i style="width:${Math.max(2, v / max * 100)}%"></i></span><span class="v">${brlCurto(v)}${extra || ""}</span></div>`;
@@ -2138,10 +2180,18 @@ async function paginaGastos() {
       <section class="secao"><h3>Preço pago por modelo</h3><div class="tw"><table><thead><tr><th style="text-align:left">Descrição</th><th>Un.</th><th>Compras</th><th>Preço mais comum</th><th>Faixa de preço</th><th>Total</th></tr></thead><tbody>
         ${d.itens.map((i) => `<tr><td class="d">${esc(i.descricao)}<button type="button" class="copiar" data-t="${esc(i.descricao)}">📋 Copiar</button></td><td>${esc(i.unidade)}</td><td>${i.compras}</td><td><b>${brl(i.mediana)}</b></td><td>${brl(i.min)} a ${brl(i.max)}</td><td>${brlCurto(i.valor)}</td></tr>`).join("")}
       </tbody></table></div><p class="g-nota" style="margin:0">Faixa de preço: deixa de fora os 10% mais baratos e os 10% mais caros, que costumam ser erro de digitação.</p></section>
+      ${d.aviso ? `<div class="aviso">${esc(d.aviso)}</div>` : ""}
       ${d.cortado ? `<div class="aviso">Este produto tem compras demais: somei as 15 mil mais recentes.</div>` : ""}
       <p class="g-nota">Fonte: Dados Abertos do Compras.gov.br (pesquisa de preços). Inclui atas de registro de preços, que nem sempre são compradas inteiras. Órgãos que não usam o Compras.gov.br podem ficar de fora.</p>`;
   }
-  alvo.addEventListener("submit", (e) => { e.preventDefault(); const q = alvo.querySelector("#g-q").value.trim(); if (q) { history.replaceState(null, "", "/gastos?q=" + encodeURIComponent(q)); mostrar(q); } });
+  // pesquisa sozinha quando a pessoa para de digitar (1,2 segundo)
+  alvo.querySelector("#g-q").addEventListener("input", (e) => {
+    clearTimeout(esperaG);
+    const q = e.target.value.trim();
+    if (sem_acentoLen(q) < 4) return;
+    esperaG = setTimeout(() => { history.replaceState(null, "", "/gastos?q=" + encodeURIComponent(q)); mostrar(q); }, 1200);
+  });
+  alvo.addEventListener("submit", (e) => { e.preventDefault(); clearTimeout(esperaG); const q = alvo.querySelector("#g-q").value.trim(); if (q) { history.replaceState(null, "", "/gastos?q=" + encodeURIComponent(q)); mostrar(q); } });
   alvo.addEventListener("click", (e) => {
     const cp = e.target.closest(".copiar"); if (cp && navigator.clipboard) { navigator.clipboard.writeText(cp.dataset.t); cp.textContent = "✔ Copiado"; setTimeout(() => { cp.textContent = "📋 Copiar"; }, 1500); }
   });
