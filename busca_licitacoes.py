@@ -1037,6 +1037,7 @@ aside summary::-webkit-details-marker{display:none}
 .cab{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;color:var(--muted)}
 .cab b{color:var(--ink);font-size:17px}
 .cab .at{margin-left:auto;font-size:12.5px;color:var(--dim)}
+.cab .salvar-todas+.at{margin-left:4px}
 .aviso{background:var(--warn-bg);border:1px solid #6e5317;border-radius:10px;padding:10px 14px;font-size:13.5px}
 .erro{background:var(--bad-bg);border:1px solid #7a2f2f;border-radius:10px;padding:12px 16px}
 
