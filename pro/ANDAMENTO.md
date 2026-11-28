@@ -9,13 +9,14 @@ Dona: Soluções Comerciais (Brasília/DF). Fica nesta pasta `pro/` do repositó
 - Menu: Encontrar (Buscar licitações, Radar, SigaScore) · Preparar (Leitor de edital [IA], Baixar editais, Buscar fornecedor, Gerador de proposta) · Disputar (Calculadora de lances, Manifestação [IA]) · Empresa (Documentos e certidões, Consulta CNPJ, Controle de caixa, Meus sites) · Minha conta · Sair. No celular: barra embaixo (Início, Buscar, Lances, Propostas, Mais).
 - Início: "Bom dia, [nome]", 4 números (oportunidades salvas, disputas da semana, propostas no mês, leituras de edital "12 de 30"), cartões das ferramentas.
 - Para vender depois: cada cliente com login e dados separados; área do administrador só para a dona; limite de leituras de IA por plano + pacote extra; cobrança pelo Asaas.
-- Planos (exemplo): SigaLicita R$ 79,90 · Pro R$ 149,90 · Combo R$ 199,90. Um login só para SigaLicita + Pro (Etapa 2).
+- Planos (exemplo): SigaLicita R$ 79,90 · Pro R$ 149,90 · Combo R$ 199,90.
+- **O SigaLicita é só para buscar oportunidades. NÃO levar nada do SigaLicita para as ferramentas do Pro e não misturar as ferramentas** (decisão da dona). No Pro, o SigaLicita aparece só como link. As ferramentas do Pro podem se ligar entre si (ex.: Calculadora → Gerador de proposta).
 - IA: uma chave da API da Anthropic (da dona). Ferramentas com IA ficam "EM BREVE" até ela colocar crédito.
 - Sempre mostrar prévia antes de publicar. Trabalhar em partes pequenas.
 
 ## Etapas
 1. Site com login + menu + ferramentas sem IA, só para a dona usar.
-2. Ligar ao SigaLicita (login único, oportunidades salvas no servidor).
+2. (Cancelado: não ligar o SigaLicita ao Pro.) Ligar as ferramentas do Pro entre si (Calculadora → Gerador).
 3. Planos, combo, pacotes, Asaas, termos de uso/LGPD, lançamento.
 
 ## Feito
